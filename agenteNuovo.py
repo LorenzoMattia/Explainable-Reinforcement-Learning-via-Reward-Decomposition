@@ -33,20 +33,21 @@ class MyModel(tf.keras.Model):
         output = self.output_layer(z)
         return output
 
-for i in range(NUM_COMPONENT):
-    Qs[i] = MyModel(num_features, 64, num_actions)
 
-
-
-# Optimizer adjusts weights to minimize loss, with the speed of learning_rate
-optimizer = tf.optimizers.Adam(0.01)
+Qs = []
+optimizer = []
+for c in range(NUM_COMPONENT):
+    Qs.append(MyModel(num_features, 64, num_actions))
+    #Qs[c] = MyModel(num_features, 64, num_actions)
+    optimizer.append(tf.optimizers.Adam(0.01))
+    #optimizer[c] = tf.optimizers.Adam(0.01)
 
 
 
 
 epsilon = 0.1
 discount = 0.99
-max_episodes = 200
+max_episodes = 1000
 max_episode_length = 2000
 eye = np.eye(8)
 
@@ -57,7 +58,7 @@ def demo_lander(env, seed=None, render=False):
     steps = 0
     s = env.reset()
     while True:
-        a = policy(0, s)
+        a = policy(s)
         s, r, done, info = env.step(a[0])
         total_reward += r
 
@@ -83,39 +84,45 @@ def policy(eps, state):
     return a
 '''
 
-def policy(state):
+def policy(state, eps=0):
     vals = np.zeros(num_actions)
-    for i in range(NUM_COMPONENT):
-        vals += predict(state,i)
-    a = np.argmax(vals, axis=-1)
-    
-
+    for c in range(NUM_COMPONENT):
+        vals += predict(state,c)
+    a = np.argmax(vals, axis=-1) if np.random.rand() >= eps  else np.random.randint(num_actions, size=vals.shape[0])
+    return a
 
 for ep in range(max_episodes):
-    if (ep) % 10 == 0:
-        print(f'Episode {ep}')
+    #if (ep) % 10 == 0:
+        #print(f'Episode {ep}')
         
     current_state = env.reset()
     d = False
-
+    rew = np.zeros(NUM_COMPONENT)
+    t = 0
+    
     while not d:      
-        a = policy(epsilon, current_state)    
+        a = policy(current_state, epsilon)    
         o, r, d, _ = env.step(a[0])
         next_state = o
 
-        rew = np.sum(r)
-        
-        with tf.GradientTape() as tape:
-          
-          selected_action_values = tf.math.reduce_sum(        # Q(s, a)
-              predict(current_state) * tf.one_hot(a, num_actions), axis=1)
-          
-          target = tf.stop_gradient(rew + (1 - d)*discount*tf.reduce_max(predict(next_state), axis=1))  # r + (1 - d)*γ*max(Q(s', a))
-          loss = tf.math.reduce_mean(tf.square(target - selected_action_values))
-        variables = Qs.trainable_variables
-        gradients = tape.gradient(loss, variables)
-        optimizer.apply_gradients(zip(gradients, variables))
+        rew += r
+        for c in range(NUM_COMPONENT):
+            with tf.GradientTape() as tape:
+              
+              selected_action_values = tf.math.reduce_sum(        # Q(s, a)
+                  predict(current_state,c) * tf.one_hot(a, num_actions), axis=1)
+              
+              target = tf.stop_gradient(r[c] + (1 - d)*discount*tf.reduce_max(predict(next_state,c), axis=1))  # r + (1 - d)*γ*max(Q(s', a))
+              loss = tf.math.reduce_mean(tf.square(target - selected_action_values))
+            variables = Qs[c].trainable_variables
+            gradients = tape.gradient(loss, variables)
+            optimizer[c].apply_gradients(zip(gradients, variables))
 
         current_state = next_state
-
+        t += 1
+    
+    print(f'Epistode {ep}:/t Reward: {rew}')
+    
+    
+    
 demo_lander(env, render=True)

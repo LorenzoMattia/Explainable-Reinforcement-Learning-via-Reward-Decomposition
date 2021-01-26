@@ -38,7 +38,7 @@ optimizer = tf.optimizers.Adam(1e-3)
 
 epsilon = 0.1
 discount = 0.99
-max_episodes = 200
+max_episodes = 1000
 max_episode_length = 2000
 eye = np.eye(8)
 
