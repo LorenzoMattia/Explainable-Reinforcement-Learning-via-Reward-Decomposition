@@ -48,7 +48,7 @@ def demo_lander(env, seed=None, render=False):
     steps = 0
     s = env.reset()
     while True:
-        a = policy(1, s)
+        a = policy(0, s)
         s, r, done, info = env.step(a[0])
         total_reward += r
 
