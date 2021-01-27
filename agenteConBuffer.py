@@ -73,7 +73,7 @@ class ReplayBuffer(object):
 
 epsilon = 0.9
 discount = 0.99
-max_episodes = 500
+max_episodes = 2000
 #max_episode_length = 2000
 buffer = ReplayBuffer(100000)
 batch_size = 32
@@ -225,13 +225,14 @@ for ep in range(max_episodes):
 
     
     if epsilon > 0.1:
-        epsilon -= 0.8/100
+        epsilon -= 0.8/500
         
     
     
     print(f'Episode {ep}:    Reward: {ep_rew}    MeanLoss: {meanLoss}')
+    '''
     if ep_rew[1]>0:
         demo_lander(env, render=True)
-    
+    '''
     
 demo_lander(env, render=True)
