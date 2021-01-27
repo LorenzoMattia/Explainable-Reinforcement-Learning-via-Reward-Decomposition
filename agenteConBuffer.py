@@ -153,10 +153,9 @@ def train_step(states, actions, rewards, next_states, dones):
         max_next_qs = tf.math.reduce_sum(next_qs* tf.one_hot(next_actions, num_actions), axis=-1)
         target = rewards[:,c] + (1. - dones) * discount * max_next_qs
         
-        with tf.GradientTape() as tape:    
-          pippo = predict(states,c) * tf.one_hot(actions[:,0], num_actions)
-          selected_action_values = tf.math.reduce_sum(        # Q(s, a)
-              pippo, axis=-1)
+        with tf.GradientTape() as tape:
+            selected_action_values = tf.math.reduce_sum(        # Q(s, a)
+              predict(states,c) * tf.one_hot(actions[:,0], num_actions), axis=-1)
           '''
           if c == 4:
               print("---------ACTIONSVALUES PRIMA DELLA SOMMA----------")
