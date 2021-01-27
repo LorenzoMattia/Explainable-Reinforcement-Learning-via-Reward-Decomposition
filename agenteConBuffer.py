@@ -17,11 +17,8 @@ gamma = 0.99
 # BUILD NEURAL NETWORK
 
 class MyModel(tf.keras.Model):
-    def __init__(self, state_shape, hidden_units, num_actions):
+    def __init__(self, hidden_units, num_actions):
         super(MyModel, self).__init__()
-        self.input_layer = tf.keras.layers.InputLayer(
-            input_shape=state_shape
-        )
         self.hidden_layer = tf.keras.layers.Dense(
             hidden_units, activation='relu', kernel_initializer='RandomNormal')
         self.output_layer = tf.keras.layers.Dense(
@@ -29,17 +26,18 @@ class MyModel(tf.keras.Model):
 
     @tf.function
     def call(self, inputs):
-        z = self.input_layer(inputs)
-        z = self.hidden_layer(z)
+        z = self.hidden_layer(inputs)
         output = self.output_layer(z)
         return output
 
 
-Qs = []
+main_nn = []
+target_nn = []
 optimizer = []
 for c in range(NUM_COMPONENT):
-    Qs.append(MyModel(num_features, 64, num_actions))
-    #Qs[c] = MyModel(num_features, 64, num_actions)
+    main_nn.append(MyModel(64, num_actions))
+    #main_nn[c] = MyModel(num_features, 64, num_actions)
+    target_nn.append(MyModel(64, num_actions))
     optimizer.append(tf.optimizers.Adam(0.01))
     #optimizer[c] = tf.optimizers.Adam(0.01)
 
@@ -73,13 +71,13 @@ class ReplayBuffer(object):
     dones = np.array(dones, dtype=np.float32)
     return states, actions, rewards, next_states, dones
 
-epsilon = 0.1
+epsilon = 0.9
 discount = 0.99
-max_episodes = 1000
-max_episode_length = 2000
-eye = np.eye(8)
+max_episodes = 500
+#max_episode_length = 2000
 buffer = ReplayBuffer(100000)
 batch_size = 32
+cur_frame = 0
 
 #Per stampare alla fine
 def demo_lander(env, seed=None, render=False):
@@ -104,7 +102,7 @@ def demo_lander(env, seed=None, render=False):
     return total_reward
 
 def predict(state, component):
-    return Qs[component](state)
+    return main_nn[component](state)
 '''
 def policy(eps, state):
     vals = predict(state)
@@ -116,42 +114,81 @@ def policy(eps, state):
 def policy(state, eps=0):
     vals = np.zeros(num_actions)
     state_in = tf.expand_dims(state, axis=0)
+    #print("++++++++++Inizio Con nuova policy++++++++++++")
+    #print(np.shape(vals))
     for c in range(NUM_COMPONENT):
         vals += predict(state_in,c)
-    a = np.argmax(vals, axis=-1) if np.random.rand() >= eps  else np.random.randint(num_actions, size=vals.shape[0])
+        '''
+        temp = predict(state_in,c)
+        vals += temp
+        print(f"------------Predict component {c}:-----------------")
+        print(np.shape(temp))
+        print(temp)
+        
+    print("---------------Vals-----------------")
+    print(np.shape(vals))
+    print(vals)
+    '''
+
+    temp = np.random.rand()
+    a = np.argmax(vals, axis=-1) if  temp >= eps  else np.random.randint(num_actions, size=vals.shape[0])
+    '''
+    if temp >= eps:
+        print("-+-+-+-+-+-+-+-+-ArgMax+-+-+-+-+-+--+-+-+")
+        print(f"random = {temp}, eps = {eps}")
+        print(np.shape(a))
+        print(a)
+    '''
     return a
 
 def train_step(states, actions, rewards, next_states, dones):
+    totaloss = 0
     for c in range(NUM_COMPONENT):
-        with tf.GradientTape() as tape:      
-          selected_action_values = tf.math.reduce_sum(        # Q(s, a)
-              predict(states,c) * tf.one_hot(actions[:,0], num_actions), axis=-1)
-          '''
-          print("--------reward---------")
-          print(np.shape(rewards))
-          print(rewards)
-          print("----------------------")
-          '''
-          target = tf.stop_gradient(rewards[:,c] + (1 - dones)*discount*tf.reduce_max(predict(next_states,c), axis=-1))  # r + (1 - d)*γ*max(Q(s', a))
-          '''
-          print("--------Target---------")
-          print(np.shape(target))
-          print(target)
-          print("++++++++SelectActionValues+++++++++")
-          print(np.shape(selected_action_values))
-          print(selected_action_values)
-          print("----------------------")
-          '''
-          loss = tf.math.reduce_sum(tf.square(target - selected_action_values))
-          '''
-          print("--------Loss---------")
-          print(np.shape(loss))
-          print(loss)
-          '''
+        next_qs = target_nn[c](next_states)
+        max_next_qs = tf.reduce_max(next_qs, axis=-1)
+        target = rewards[:,c] + (1. - dones) * discount * max_next_qs
         
-        variables = Qs[c].trainable_variables
+        with tf.GradientTape() as tape:    
+          pippo = predict(states,c) * tf.one_hot(actions[:,0], num_actions)
+          selected_action_values = tf.math.reduce_sum(        # Q(s, a)
+              pippo, axis=-1)
+          '''
+          if c == 4:
+              print("---------ACTIONSVALUES PRIMA DELLA SOMMA----------")
+              print(np.shape(pippo))
+              print(pippo)
+              
+              print("--------reward---------")
+              print(np.shape(rewards))
+              print(rewards)
+              print("----------------------")
+              
+              #target = tf.stop_gradient(rewards[:,c] + (1 - dones)*discount*tf.reduce_max(predict(next_states,c), axis=-1))  # r + (1 - d)*γ*max(Q(s', a))
+              
+              print("--------Target---------")
+              print(np.shape(target))
+              print(target)
+              print("++++++++SelectActionValues+++++++++")
+              print(np.shape(selected_action_values))
+              print(selected_action_values)
+              print("----------------------")
+          '''
+          temp = tf.square(target - selected_action_values)
+          loss = tf.math.reduce_sum(temp)
+          '''
+          if c == 4:
+              print("--------SquaredError---------")
+              print(np.shape(temp))
+              print(temp)
+              print("--------Loss---------")
+              print(np.shape(loss))
+              print(loss)
+          '''
+        totaloss +=loss
+        variables = main_nn[c].trainable_variables
         gradients = tape.gradient(loss, variables)
         optimizer[c].apply_gradients(zip(gradients, variables))
+    return loss/NUM_COMPONENT
 
 
 for ep in range(max_episodes):
@@ -162,7 +199,7 @@ for ep in range(max_episodes):
     d = False
     ep_rew = np.zeros(NUM_COMPONENT)
     t = 0
-    
+    meanLoss = 0
     while not d:      
         a = policy(current_state, epsilon)    
         o, r, d, _ = env.step(a[0])
@@ -170,17 +207,31 @@ for ep in range(max_episodes):
         ep_rew += r
         
         buffer.add(current_state, a, r, next_state, d)
+        cur_frame += 1
+        if cur_frame % 2000 == 0:
+            #print("-----*****-----------AGGIORNO I PESI DELLA TARGET!!-----*****-------")
+            for c in range(NUM_COMPONENT):
+                target_nn[c].set_weights(main_nn[c].get_weights())
         
         if len(buffer) >= batch_size:
             states, actions, rewards, next_states, dones = buffer.sample(batch_size)
-            train_step(states, actions, rewards, next_states, dones)
+            meanLoss = train_step(states, actions, rewards, next_states, dones)
             buffer = ReplayBuffer(100000)
 
         current_state = next_state
+        
         t += 1
+        
+
     
-    print(f'Episode {ep}:/t Reward: {ep_rew}')
+    if epsilon > 0.1:
+        epsilon -= 0.8/100
+        
     
+    
+    print(f'Episode {ep}:    Reward: {ep_rew}    MeanLoss: {meanLoss}')
+    if ep_rew[1]>0:
+        demo_lander(env, render=True)
     
     
 demo_lander(env, render=True)
