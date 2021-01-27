@@ -143,9 +143,14 @@ def policy(state, eps=0):
 
 def train_step(states, actions, rewards, next_states, dones):
     totaloss = 0
+    vals = np.zeros((batch_size,num_actions))
+    for c in range(NUM_COMPONENT):
+        vals += predict(next_states,c)
+    next_actions = np.argmax(vals, axis=-1)
+    
     for c in range(NUM_COMPONENT):
         next_qs = target_nn[c](next_states)
-        max_next_qs = tf.reduce_max(next_qs, axis=-1)
+        max_next_qs = tf.math.reduce_sum(next_qs* tf.one_hot(next_actions, num_actions), axis=-1)
         target = rewards[:,c] + (1. - dones) * discount * max_next_qs
         
         with tf.GradientTape() as tape:    
@@ -200,7 +205,9 @@ for ep in range(max_episodes):
     ep_rew = np.zeros(NUM_COMPONENT)
     t = 0
     meanLoss = 0
-    while not d:      
+    while not d:
+        if t > max_episodes:
+            break
         a = policy(current_state, epsilon)    
         o, r, d, _ = env.step(a[0])
         next_state = o
