@@ -6,13 +6,11 @@ from collections import deque
 
 env = LunarLander()
 num_actions = env.action_space.n
-num_features = env.observation_space.shape[0]
+#num_features = env.observation_space.shape[0]
 NUM_COMPONENT = 8
-print('Number of state features: {}'.format(num_features))
+#print('Number of state features: {}'.format(num_features))
 print('Number of possible actions: {}'.format(num_actions))
 
-
-gamma = 0.99
 
 # BUILD NEURAL NETWORK
 
@@ -73,11 +71,15 @@ class ReplayBuffer(object):
 
 epsilon = 0.9
 discount = 0.99
-max_episodes = 2000
-#max_episode_length = 2000
+max_episodes = 5
+max_episode_length = 3000
 buffer = ReplayBuffer(100000)
 batch_size = 32
 cur_frame = 0
+seed = 10
+executePolicy = True
+filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
+env.seed(seed)
 
 #Per stampare alla fine
 def demo_lander(env, seed=None, render=False):
@@ -110,6 +112,14 @@ def policy(eps, state):
     a = np.argmax(vals, axis=-1) if np.random.rand() >= eps  else np.random.randint(num_actions, size=vals.shape[0])
     return a
 '''
+
+def save_weights(filepath, overwrite=False):
+    for c in range(NUM_COMPONENT):
+        main_nn[c].save_weights(filepath + str(c)+'\\', overwrite=overwrite)
+
+def load_weights(filepath):
+    for c in range(NUM_COMPONENT):
+        main_nn[c].load_weights(filepath + str(c)+'\\')
 
 def policy(state, eps=0):
     vals = np.zeros(num_actions)
@@ -156,8 +166,8 @@ def train_step(states, actions, rewards, next_states, dones):
         with tf.GradientTape() as tape:
             selected_action_values = tf.math.reduce_sum(        # Q(s, a)
               predict(states,c) * tf.one_hot(actions[:,0], num_actions), axis=-1)
-          '''
-          if c == 4:
+            '''
+            if c == 4:
               print("---------ACTIONSVALUES PRIMA DELLA SOMMA----------")
               print(np.shape(pippo))
               print(pippo)
@@ -176,69 +186,76 @@ def train_step(states, actions, rewards, next_states, dones):
               print(np.shape(selected_action_values))
               print(selected_action_values)
               print("----------------------")
-          '''
-          temp = tf.square(target - selected_action_values)
-          loss = tf.math.reduce_sum(temp)
-          '''
-          if c == 4:
+            '''
+            temp = tf.square(target - selected_action_values)
+            loss = tf.math.reduce_mean(temp)
+            '''
+            if c == 4:
               print("--------SquaredError---------")
               print(np.shape(temp))
               print(temp)
               print("--------Loss---------")
               print(np.shape(loss))
               print(loss)
-          '''
+            '''
         totaloss +=loss
         variables = main_nn[c].trainable_variables
         gradients = tape.gradient(loss, variables)
         optimizer[c].apply_gradients(zip(gradients, variables))
     return loss/NUM_COMPONENT
 
+def train():
+    for ep in range(max_episodes):
+        #if (ep) % 10 == 0:
+            #print(f'Episode {ep}')
+            
+        current_state = env.reset()
+        d = False
+        ep_rew = np.zeros(NUM_COMPONENT)
+        t = 0
+        meanLoss = 0
+        num_train = 0
+        while not d:
+            if t > max_episode_length:
+                break
+            a = policy(current_state, epsilon)    
+            o, r, d, _ = env.step(a[0])
+            next_state = o
+            ep_rew += r
+            
+            buffer.add(current_state, a, r, next_state, d)
+            cur_frame += 1
+            if cur_frame % 2000 == 0:
+                #print("-----*****-----------AGGIORNO I PESI DELLA TARGET!!-----*****-------")
+                for c in range(NUM_COMPONENT):
+                    target_nn[c].set_weights(main_nn[c].get_weights())
+            
+            if len(buffer) >= batch_size:
+                states, actions, rewards, next_states, dones = buffer.sample(batch_size)
+                meanLoss += train_step(states, actions, rewards, next_states, dones)
+                num_train += 1
+            current_state = next_state
+            
+            t += 1
+            
 
-for ep in range(max_episodes):
-    #if (ep) % 10 == 0:
-        #print(f'Episode {ep}')
         
-    current_state = env.reset()
-    d = False
-    ep_rew = np.zeros(NUM_COMPONENT)
-    t = 0
-    meanLoss = 0
-    while not d:
-        if t > max_episodes:
-            break
-        a = policy(current_state, epsilon)    
-        o, r, d, _ = env.step(a[0])
-        next_state = o
-        ep_rew += r
+        if epsilon > 0.1:
+            epsilon -= 0.8/200
+            
         
-        buffer.add(current_state, a, r, next_state, d)
-        cur_frame += 1
-        if cur_frame % 2000 == 0:
-            #print("-----*****-----------AGGIORNO I PESI DELLA TARGET!!-----*****-------")
-            for c in range(NUM_COMPONENT):
-                target_nn[c].set_weights(main_nn[c].get_weights())
         
-        if len(buffer) >= batch_size:
-            states, actions, rewards, next_states, dones = buffer.sample(batch_size)
-            meanLoss = train_step(states, actions, rewards, next_states, dones)
-            buffer = ReplayBuffer(100000)
-
-        current_state = next_state
-        
-        t += 1
-        
-
+        print(f'Episode :{ep} Step : {t}    Reward: {ep_rew}    MeanLoss: {meanLoss/num_train}')
+        '''
+        if ep_rew[1]>0:
+            demo_lander(env, render=True)
+        '''
+    save_weights(filepath, True)   
+    demo_lander(env, seed, True)
     
-    if epsilon > 0.1:
-        epsilon -= 0.8/500
-        
+if executePolicy :
+    load_weights(filepath)
+    demo_lander(env, seed, True)
+else:
+    train()
     
-    
-    print(f'Episode {ep}:    Reward: {ep_rew}    MeanLoss: {meanLoss}')
-    '''
-    if ep_rew[1]>0:
-        demo_lander(env, render=True)
-    '''
-    
-demo_lander(env, render=True)
