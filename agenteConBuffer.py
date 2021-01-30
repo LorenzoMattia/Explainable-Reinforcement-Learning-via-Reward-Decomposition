@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import matplotlib.pyplot as plt
 import lunar_lander
 from lunar_lander import LunarLander
 from collections import deque
@@ -69,20 +70,46 @@ class ReplayBuffer(object):
     dones = np.array(dones, dtype=np.float32)
     return states, actions, rewards, next_states, dones
 
+
+class GraphCollector(object):
+    def __init__(self):
+        self.x = []
+        self.y = []
+    
+    def append(self, x, y):
+        self.x.append(x)
+        self.y.append(y)
+        
+    def plot(self, xlabel=None, ylabel=None):
+        plt.plot(self.x, self.y, )
+        if not xlabel is None:
+            plt.xlabel(xlabel)
+        if not ylabel is None:
+            plt.ylabel(ylabel)
+        plt.show()
+        
+    def __str__(self):
+        points = ''
+        for i in range(len(self.x)):
+            points += f'[{self.x[i]},{self.y[i]}],'
+        return f"Graph:\n   X={self.x}\n   Y={self.y}\n   Points: " + points[:-1]
+
 epsilon = 0.9
 discount = 0.99
-max_episodes = 5
+max_episodes = 1001
 max_episode_length = 3000
-buffer = ReplayBuffer(100000)
+buffer = ReplayBuffer(1000000)
 batch_size = 32
 cur_frame = 0
-seed = 10
-executePolicy = True
-filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
-env.seed(seed)
+seed = None
+continue_learning = False
+executePolicy = False
+#filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
+#filepath = 'D:\\Users\\norto\\Documents\\Università La Sapienza\\RL\\Progetto_Esame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
+filepath = 'filepath'
 
 #Per stampare alla fine
-def demo_lander(env, seed=None, render=False):
+def demo_lander(env, seed=None, render=False, prints=True):
     env.seed(seed)
     total_reward = np.zeros(8)
     steps = 0
@@ -96,12 +123,20 @@ def demo_lander(env, seed=None, render=False):
             still_open = env.render()
             if still_open == False: break
 
-        if steps % 20 == 0 or done:
+        if (steps % 20 == 0 or done) and prints:
             print("observations:", " ".join(["{:+0.2f}".format(x) for x in s]))
             print("step {} total_reward {}".format(steps, total_reward))
         steps += 1
         if done: break
+        if steps>max_episode_length: break
     return total_reward
+    
+def execute_some_policy(env, num_iterations = 10, seed=None, render=False, prints=False):
+    total_reward = 0
+    for i in range(num_iterations):
+        total_reward += np.sum(demo_lander(env,seed,render,prints))
+    avarage_reward = total_reward/num_iterations
+    return avarage_reward
 
 def predict(state, component):
     return main_nn[component](state)
@@ -120,6 +155,10 @@ def save_weights(filepath, overwrite=False):
 def load_weights(filepath):
     for c in range(NUM_COMPONENT):
         main_nn[c].load_weights(filepath + str(c)+'\\')
+        
+def update_target_weights():
+    for c in range(NUM_COMPONENT):
+        target_nn[c].set_weights(main_nn[c].get_weights())
 
 def policy(state, eps=0):
     vals = np.zeros(num_actions)
@@ -154,6 +193,7 @@ def policy(state, eps=0):
 def train_step(states, actions, rewards, next_states, dones):
     totaloss = 0
     vals = np.zeros((batch_size,num_actions))
+
     for c in range(NUM_COMPONENT):
         vals += predict(next_states,c)
     next_actions = np.argmax(vals, axis=-1)
@@ -205,10 +245,17 @@ def train_step(states, actions, rewards, next_states, dones):
     return loss/NUM_COMPONENT
 
 def train():
+    cur_frame = 0
+    epsilon = 0.9
+    if continue_learning:
+        load_weights(filepath)
+    update_target_weights()
+    
+    plotter = GraphCollector()
+
     for ep in range(max_episodes):
         #if (ep) % 10 == 0:
             #print(f'Episode {ep}')
-            
         current_state = env.reset()
         d = False
         ep_rew = np.zeros(NUM_COMPONENT)
@@ -216,6 +263,7 @@ def train():
         meanLoss = 0
         num_train = 0
         while not d:
+            #env.render()
             if t > max_episode_length:
                 break
             a = policy(current_state, epsilon)    
@@ -226,9 +274,8 @@ def train():
             buffer.add(current_state, a, r, next_state, d)
             cur_frame += 1
             if cur_frame % 2000 == 0:
-                #print("-----*****-----------AGGIORNO I PESI DELLA TARGET!!-----*****-------")
-                for c in range(NUM_COMPONENT):
-                    target_nn[c].set_weights(main_nn[c].get_weights())
+                #Update target's weights
+                update_target_weights()
             
             if len(buffer) >= batch_size:
                 states, actions, rewards, next_states, dones = buffer.sample(batch_size)
@@ -241,18 +288,23 @@ def train():
 
         
         if epsilon > 0.1:
-            epsilon -= 0.8/200
-            
+            epsilon -= 0.8/250
+
+        if (ep) % 25 == 0:
+            tent_rew = execute_some_policy(env, 10)
+            plotter.append(ep, tent_rew)
+            print(f'Episode :{ep}  Rew: {tent_rew}  MeanLoss: {meanLoss/num_train}')
         
-        
-        print(f'Episode :{ep} Step : {t}    Reward: {ep_rew}    MeanLoss: {meanLoss/num_train}')
+        #print(f'Episode :{ep} Step : {t}    Reward: {ep_rew}    MeanLoss: {meanLoss/num_train}')
         '''
         if ep_rew[1]>0:
             demo_lander(env, render=True)
         '''
-    save_weights(filepath, True)   
+    save_weights(filepath, True)
+    print(plotter)
+    plotter.plot("Episodes", "Average Score")
     demo_lander(env, seed, True)
-    
+
 if executePolicy :
     load_weights(filepath)
     demo_lander(env, seed, True)
