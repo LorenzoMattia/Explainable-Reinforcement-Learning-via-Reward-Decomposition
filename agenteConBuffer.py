@@ -5,7 +5,7 @@ import lunar_lander
 from lunar_lander import LunarLander
 from collections import deque
 
-env = LunarLander()
+self.env = LunarLander()
 num_actions = env.action_space.n
 #num_features = env.observation_space.shape[0]
 NUM_COMPONENT = 8
