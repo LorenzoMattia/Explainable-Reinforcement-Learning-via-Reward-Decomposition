@@ -7,6 +7,7 @@ from GraphCollector import GraphCollector
 from ReplayBuffer import ReplayBuffer
 from QNetwork import QNetwork
 import os, sys
+from cliff_world import CliffWalkingEnv
 
 #filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
 #filepath = 'D:\\Users\\norto\\Documents\\Università La Sapienza\\RL\\Progetto_Esame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
@@ -46,8 +47,8 @@ class Agent():
         True if you want to execute the learned policy instead of continue learning False otherwise
     """
 
-    def __init__(self, env = LunarLander(), QNetwork = QNetwork, epsilon = 0.9, discount = 0.99, max_episodes = 26, max_episode_length = 3000,
-                batch_size = 32, discount_decay_episodes = 200, plot_point = 25, num_policy_exe = 10, continue_learning = False, 
+    def __init__(self, env = CliffWalkingEnv(), QNetwork = QNetwork, epsilon = 0.9, discount = 0.99, max_episodes = 500, max_episode_length = 3000,
+                batch_size = 32, discount_decay_episodes = 400, plot_point = 25, num_policy_exe = 10, continue_learning = False, 
                 execute_policy = False, filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'):
         
         self.env = env
@@ -87,17 +88,17 @@ class Agent():
 
         for ep in range(self.max_episodes):
             
-            current_state = self.env.reset()
+            current_state = self.reset()
             d = False
             ep_rew = np.zeros(self.NUM_COMPONENT)
-            t = 0
+            step = 0
             meanLoss = 0
             num_train = 0
             while not d:
-                if t > self.max_episode_length:
+                if step > self.max_episode_length:
                     break
                 a = self.policy(current_state, self.epsilon)    
-                o, r, d, _ = self.env.step(a[0])
+                o, r, d, _ = self.step(a[0])
                 next_state = o
                 ep_rew += r
                 
@@ -113,15 +114,19 @@ class Agent():
                     num_train += 1
                 current_state = next_state
                 
-                t += 1
+                step += 1
                 
             if self.epsilon > 0.1:
                 self.epsilon -= 0.8/self.discount_decay_episodes
-
+            
+            
             if (ep) % self.plot_point == 0:
                 tent_rew = self.execute_some_policy(10)
                 self.plotter.append(ep, tent_rew)
-                print(f'Episode :{ep}  Rew: {tent_rew}  MeanLoss: {meanLoss/num_train}')
+                meanLoss = meanLoss/num_train if not num_train == 0 else 'not computed'
+                print(f'Episode :{ep}  Rew: {tent_rew}  MeanLoss: {meanLoss}')
+            
+            print(f'Episode :{ep}   Step :{step}   Rew: {ep_rew}')
         
         if not self.filepath is None:
             self.save_weights(True)
@@ -159,12 +164,12 @@ class Agent():
         
     def demo_lander(self, seed=None, render=False, prints=True):
         self.env.seed(seed)
-        total_reward = np.zeros(8)
+        total_reward = np.zeros(self.NUM_COMPONENT)
         steps = 0
-        s = self.env.reset()
+        s = self.reset()
         while True:
             a = self.policy(s)
-            s, r, done, info = self.env.step(a[0])
+            s, r, done, info = self.step(a[0])
             total_reward += r
 
             if render:
@@ -222,10 +227,22 @@ class Agent():
             self.demo_lander(env, render = True)
         else:
             self.train() 
+                    
+    def step(self, action):
+        o, r, d, info = self.env.step(action)
+        if np.shape(o) == ():
+            o = np.array([o])
+        return o, r, d, info
         
+    def reset(self):
+        o = self.env.reset()
+        if np.shape(o) == ():
+            o = np.array([o])
+        return o
+
         
 if __name__ == '__main__':
-    agent = Agent(continue_learning = True)
+    agent = Agent()
     agent.main()
         
         
