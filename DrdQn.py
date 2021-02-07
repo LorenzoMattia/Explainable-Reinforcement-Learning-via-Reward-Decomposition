@@ -6,6 +6,8 @@ import random
 import math
 import lunar_lander
 from lunar_lander import LunarLander
+import matplotlib.pyplot as plt
+import itertools
 from GraphCollector import GraphCollector
 import os, sys
 
@@ -15,7 +17,7 @@ num_actions = env.action_space.n
 NUM_COMPONENT = env.num_reward_components
 rew_plotter = GraphCollector()
 loss_plotter = GraphCollector()
-execute_policy = False
+execute_policy = True
 filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'
 print('Number of state features: {}'.format(num_features))
 print('Number of possible actions: {}'.format(num_actions))
@@ -37,7 +39,7 @@ class DQN(tf.keras.Model):
     return self.dense3(x)
     
 def eval_rew(total_rew):
-    return total_rew[6] > 150
+    return total_rew[6] > 130
 
 def demo_lander(seed=None, render=False, prints=True, explain = False):
     env.seed(seed)
@@ -47,9 +49,9 @@ def demo_lander(seed=None, render=False, prints=True, explain = False):
     while True:
         s = tf.expand_dims(s, axis=0)
         a = select_epsilon_greedy_action(s, 0.)
-        if explain and eval_rew(r):
+        if explain and eval_rew(total_reward):
             for i in range(num_actions):
-                if not i == a
+                if not i == a:
                     explanation(s, a, i)
             explain = False
         s, r, done, info = env.step(a)
@@ -235,22 +237,21 @@ def train():
   
     
 def explanation(state, a1, a2):
+    print(f'Action to do: {a1}, Action to compare: {a2}')
     names = ['crash', 'live', 'main fuel cost', 'side fuel cost', 'angle', 'contact', 'distance', 'velocity']
     state = tf.expand_dims(state, axis=0)
-    qvals = main_nn[0](state)
+    qvals = main_nn[0](state)[-1][-1]
     for c in range(NUM_COMPONENT):
         if not c == 0:
-            qvals = np.vstack((qvals,main_nn[c](state)))
+            qvals = np.vstack((qvals,main_nn[c](state)[-1][-1]))
     q1 = qvals[:, a1]
     q2 = qvals[:, a2]
 
     rdx = q1-q2     #ogni elemento del vettore risultante è l'rdx di una componente
     values2names = dict(zip(rdx, names))
     rdxtot = np.sum(rdx)    #rdx totale
-    print('------------------------RDX-----------------------')
-    print(rdx)
-    print('------------------------RDX totale-----------------------')
-    print(rdxtot)
+    print(f'RDX: {rdx}')
+    print(f'total sum rdx: {rdxtot}')
 
     x = np.arange(NUM_COMPONENT)
     plt.bar(x, height = rdx)
@@ -262,8 +263,7 @@ def explanation(state, a1, a2):
         if rdx[i]<0:
             d += rdx[i]
     d = abs(d)
-    print('------------------------d-----------------------')
-    print(d)
+    print(f'd = {d}')
 
     msxplus = ()
 
@@ -277,15 +277,12 @@ def explanation(state, a1, a2):
             msxplus = min(greaters, key = sum)
             break
 
-
-    print('------------------------msxplus-----------------------')
-    print(msxplus)
+    print(f'msxplus = {msxplus}')
     try:
         v = np.sum(msxplus) - msxplus.min()
     except:
         v = np.sum(msxplus)
-    print('------------------------v-----------------------')
-    print(v)
+    print(f'v = {v}')
     msxmin = ()
     for L in range(0, len(rdx)+1):
         allcomb = []
@@ -294,26 +291,23 @@ def explanation(state, a1, a2):
         allcomb = np.array(allcomb)
         greaters = graterthan(allcomb, v)
         if greaters:
-            msxmin = min(greaters, key = sum)
+            msxmin = -min(greaters, key = sum)
             break
 
-    print('------------------------allcomb-----------------------')
-
-    print(allcomb)
-    print('------------------------msxmin-----------------------')
-    print(msxmin)
+    print(f'msxmin = {msxmin}')
     
-    x = np.arange(msxplus.size())
-    plt,title('MSX+')
+    x = np.arange(len(msxplus))
+    plt.title('MSX+')
     plt.bar(x, height = msxplus)
     plt.xticks(x, [values2names[x] for x in msxplus], rotation = 45)
     plt.show()
     
-    x = np.arange(msxmin.size())
-    plt,title('MSX-')
+    x = np.arange(len(msxmin))
+    plt.title('MSX-')
     plt.bar(x, height = msxmin)
     plt.xticks(x, [values2names[x] for x in msxmin], rotation = 45)
     plt.show()
+    print()
 
 def graterthan(lst, d):
     result = []
@@ -329,6 +323,6 @@ if __name__ == '__main__':
             load_weights()
         else:
             print("Missing filepath")
-        demo_lander(render = True)
+        demo_lander(render = True, explain = True)
     else:
         train()
