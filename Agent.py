@@ -1,6 +1,5 @@
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
 import lunar_lander
 from lunar_lander import LunarLander
 from GraphCollector import GraphCollector
@@ -50,8 +49,9 @@ class Agent():
         True if you want to execute the learned policy instead of continue learning False otherwise
     """
 
-    def __init__(self, env = LunarLander(), QNetwork = QNetwork, epsilon = 0.9, discount = 0.99, max_episodes = 500, max_episode_length = 3000,
-                batch_size = 32, discount_decay_episodes = 400, plot_point = 25, num_policy_exe = 10, continue_learning = False, 
+
+    def __init__(self, env = LunarLander(), QNetwork = QNetwork, epsilon = 0.9, discount = 0.99, max_episodes = 1001, max_episode_length = 3000,
+                batch_size = 64, discount_decay_episodes = 400, plot_point = 25, num_policy_exe = 10, continue_learning = False, 
                 execute_policy = False, filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'):
         
         self.env = env
@@ -63,7 +63,8 @@ class Agent():
         self.continue_learning = continue_learning
         self.execute_policy = execute_policy
         self.buffer = ReplayBuffer(1000000)
-        self.plotter = GraphCollector()
+        self.rew_plotter = GraphCollector()
+        self.loss_plotter = GraphCollector()
         self.num_actions = self.env.action_space.n
         self.NUM_COMPONENT = self.env.num_reward_components
         #self.NUM_COMPONENT = 5
@@ -108,7 +109,7 @@ class Agent():
                 
                 self.buffer.add(current_state, a, r, next_state, d)
                 cur_frame += 1
-                if cur_frame % 2000 == 0:
+                if cur_frame % 1000 == 0:
                     #Update target's weights
                     self.update_target_weights()
                 
@@ -125,17 +126,21 @@ class Agent():
             
             
             if (ep) % self.plot_point == 0:
+
                 tent_rew = self.execute_some_policy()
                 self.plotter.append(ep, tent_rew)
-                meanLoss = meanLoss/num_train if not num_train == 0 else 'not computed'
+                meanLoss = meanLoss/num_train if not num_train == 0 else 0
+                self.loss_plotter.append(ep, meanLoss)
                 print(f'Episode :{ep}  Rew: {tent_rew}  MeanLoss: {meanLoss}    BufferSize: {len(self.buffer)}')
             
             print(f'Episode :{ep}   Step :{step}   Rew: {ep_rew}')
         
         if not self.filepath is None:
             self.save_weights(True)
-        print(self.plotter)
-        self.plotter.plot("Episodes", "Average Score")
+        print(self.rew_plotter)
+        self.rew_plotter.plot("Episodes", "Average Score")
+        print(self.loss_plotter)
+        self.loss_plotter.plot("Episodes", "Loss")
         self.demo_lander(render = True)
     
     
@@ -157,13 +162,14 @@ class Agent():
                   self.predict(states,c) * tf.one_hot(actions[:,0], self.num_actions), axis=-1)     #Qvalue prediction made by the main nns
                 
                 temp = tf.square(target - selected_action_values)
-                loss = tf.math.reduce_sum(temp)/self.batch_size     #loss computation
-                
-            totaloss +=loss
+
+                loss = tf.math.reduce_sum(temp)/self.batch_size
+            totaloss += loss
             variables = self.main_nn[c].trainable_variables
             gradients = tape.gradient(loss, variables)
             self.optimizer[c].apply_gradients(zip(gradients, variables))
-        return totaloss/self.NUM_COMPONENT
+            mean_loss = totaloss/self.NUM_COMPONENT
+        return mean_loss
         
         
     def demo_lander(self, seed=None, render=False, prints=True):
@@ -241,12 +247,14 @@ class Agent():
         o, r, d, info = self.env.step(action)
         if np.shape(o) == ():
             o = np.array([o])
+            #o = tf.one_hot(o, 20)
         return o, r, d, info
         
     def reset(self):
         o = self.env.reset()
         if np.shape(o) == ():
             o = np.array([o])
+            #o = tf.one_hot(o, 20)
         return o
         
 #env = gym.make('LunarLander-v2')
@@ -326,10 +334,11 @@ class Agent():
         return result
                 
 if __name__ == '__main__':
-    agent = Agent(execute_policy = True)
+
+    agent = Agent()
+
     agent.main()
-        
-        
+
         
         
         
