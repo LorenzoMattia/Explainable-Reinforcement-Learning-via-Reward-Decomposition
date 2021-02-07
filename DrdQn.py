@@ -7,14 +7,16 @@ import math
 import lunar_lander
 from lunar_lander import LunarLander
 from GraphCollector import GraphCollector
-
+import os, sys
 
 env = LunarLander()
 num_features = env.observation_space.shape[0]
 num_actions = env.action_space.n
-NUM_COMPONENT = 8
+NUM_COMPONENT = env.num_reward_components
 rew_plotter = GraphCollector()
 loss_plotter = GraphCollector()
+execute_policy = False
+filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'
 print('Number of state features: {}'.format(num_features))
 print('Number of possible actions: {}'.format(num_actions))
 max_episode_length = 1000
@@ -101,7 +103,14 @@ class ReplayBuffer(object):
     next_states = np.array(next_states)
     dones = np.array(dones, dtype=np.float32)
     return states, actions, rewards, next_states, dones
-    
+
+def save_weights(overwrite=False):
+    for c in range(NUM_COMPONENT):
+        main_nn[c].save_weights(filepath + str(c)+'\\', overwrite=overwrite)   
+
+def load_weights():
+    for c in range(NUM_COMPONENT):
+        main_nn[c].load_weights(filepath + str(c)+'\\')
     
 def select_epsilon_greedy_action(state, epsilon):
   """Take random action with probability epsilon, else take best action."""
@@ -139,84 +148,86 @@ def train_step(states, actions, rewards, next_states, dones):
     optimizer[c].apply_gradients(zip(grads, main_nn[c].trainable_variables))
   return totaloss/NUM_COMPONENT
 
-num_episodes = 2000
-epsilon = 0.9
+num_episodes = 25
 batch_size = 32
 discount = 0.99
 buffer = ReplayBuffer(100000)
-cur_frame = 0
 
-# Start training. Play game once and then train with a batch.
-last_100_ep_rewards = []
-for episode in range(num_episodes+1):
-  t=0
-  state = env.reset()
-  ep_reward, done = 0, False
-  ep_reward_composta = np.zeros(NUM_COMPONENT)
-  totalLoss = []
-  while not done:
-    if t>max_episode_length: break
-    t += 1
-    state_in = tf.expand_dims(state, axis=0)
-    action = select_epsilon_greedy_action(state_in, epsilon)
-    next_state, reward, done, info = env.step(action)
-    ep_reward += np.sum(reward)
-    ep_reward_composta += reward
-    # Save to experience replay.
-    buffer.add(state, action, reward, next_state, done)
-    state = next_state
-    cur_frame += 1
-    # Copy main_nn weights to target_nn.
-    if cur_frame % 2000 == 0:
-      for c in range(NUM_COMPONENT):
-        target_nn[c].set_weights(main_nn[c].get_weights())
+def train():
+    cur_frame = 0
+    epsilon = 0.9
+    # Start training. Play game once and then train with a batch.
+    last_100_ep_rewards = []
+    for episode in range(num_episodes+1):
+      t=0
+      state = env.reset()
+      ep_reward, done = 0, False
+      ep_reward_composta = np.zeros(NUM_COMPONENT)
+      totalLoss = []
+      while not done:
+        if t>max_episode_length: break
+        t += 1
+        state_in = tf.expand_dims(state, axis=0)
+        action = select_epsilon_greedy_action(state_in, epsilon)
+        next_state, reward, done, info = env.step(action)
+        ep_reward += np.sum(reward)
+        ep_reward_composta += reward
+        # Save to experience replay.
+        buffer.add(state, action, reward, next_state, done)
+        state = next_state
+        cur_frame += 1
+        # Copy main_nn weights to target_nn.
+        if cur_frame % 2000 == 0:
+          for c in range(NUM_COMPONENT):
+            target_nn[c].set_weights(main_nn[c].get_weights())
 
-    # Train neural network.
-    if len(buffer) >= batch_size:
-      states, actions, rewards, next_states, dones = buffer.sample(batch_size)
-      loss = train_step(states, actions, rewards, next_states, dones)
-      totalLoss.append(loss)
-    
-  #if episode < 950:
-  if epsilon > 0.1:
-    epsilon -= 0.8/900
+        # Train neural network.
+        if len(buffer) >= batch_size:
+          states, actions, rewards, next_states, dones = buffer.sample(batch_size)
+          loss = train_step(states, actions, rewards, next_states, dones)
+          totalLoss.append(loss)
+        
+      #if episode < 950:
+      if epsilon > 0.1:
+        epsilon -= 0.8/900
 
-  if len(last_100_ep_rewards) == 100:
-    last_100_ep_rewards = last_100_ep_rewards[1:]
-  last_100_ep_rewards.append(ep_reward)
-  
-  if (episode) % 25 == 0:
-    tent_rew = execute_some_policy(10)
-    rew_plotter.append(episode, tent_rew)
-    meanLoss = np.mean(totalLoss)
-    loss_plotter.append(episode, meanLoss)
-    print(f'Episode :{episode}  Rew: {tent_rew:.3f}  MeanLoss: {meanLoss:.3f}  Steps: {t}')
-  
-  if episode % 50 == 0:
-    print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. '
-          f'Reward in last 100 episodes: {np.mean(last_100_ep_rewards, axis=0):.3f}. '
-          f'MeanLoss: {np.mean(totalLoss):.3f}')
-          
-  if episode % 100 == 0:
-    print('Rew Scoposta: [', end='')
-    for c in range(NUM_COMPONENT):
-        print(f'{ep_reward_composta[c]:.2f}', end=', ')
-    print(f"] Tot: {ep_reward:.3f}")
-env.close()
-print(rew_plotter)
-rew_plotter.plot("Episodes", "Average Score")
-print(loss_plotter)
-loss_plotter.plot("Episodes", "Loss")
+      if len(last_100_ep_rewards) == 100:
+        last_100_ep_rewards = last_100_ep_rewards[1:]
+      last_100_ep_rewards.append(ep_reward)
+      
+      if (episode) % 25 == 0:
+        tent_rew = execute_some_policy(10)
+        rew_plotter.append(episode, tent_rew)
+        meanLoss = np.mean(totalLoss)
+        loss_plotter.append(episode, meanLoss)
+        print(f'Episode :{episode}  Rew: {tent_rew:.3f}  MeanLoss: {meanLoss:.3f}  Steps: {t}')
+      
+      if episode % 50 == 0:
+        print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. '
+              f'Reward in last 100 episodes: {np.mean(last_100_ep_rewards, axis=0):.3f}. '
+              f'MeanLoss: {np.mean(totalLoss):.3f}')
+              
+      if episode % 100 == 0:
+        print('Rew Scoposta: [', end='')
+        for c in range(NUM_COMPONENT):
+            print(f'{ep_reward_composta[c]:.2f}', end=', ')
+        print(f"] Tot: {ep_reward:.3f}")
+    env.close()
+    if not filepath is None:
+        save_weights(True)
+    print(rew_plotter)
+    rew_plotter.plot("Episodes", "Average Score")
+    print(loss_plotter)
+    loss_plotter.plot("Episodes", "Loss")
+    demo_lander(render= True)
 
-env = gym.make('LunarLander-v2')
-state = env.reset()
-done = False
-ep_rew = 0
-while not done:
-  env.render()
-  state = tf.expand_dims(state, axis=0)
-  action = select_epsilon_greedy_action(state, epsilon=0.01)
-  state, reward, done, info = env.step(action)
-  ep_rew += reward
-print('Episode reward was {}'.format(ep_rew))
-env.close()
+if __name__ == '__main__':
+
+    if execute_policy :
+        if not filepath is None:
+            load_weights()
+        else:
+            print("Missing filepath")
+        demo_lander(render = True)
+    else:
+        train()
