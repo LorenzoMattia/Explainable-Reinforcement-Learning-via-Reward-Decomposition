@@ -155,7 +155,7 @@ buffer = ReplayBuffer(100000)
 
 def train():
     cur_frame = 0
-    epsilon = 0.9
+    epsilon = 1
     # Start training. Play game once and then train with a batch.
     last_100_ep_rewards = []
     for episode in range(num_episodes+1):
@@ -187,9 +187,10 @@ def train():
           loss = train_step(states, actions, rewards, next_states, dones)
           totalLoss.append(loss)
         
-      #if episode < 950:
-      if epsilon > 0.1:
-        epsilon -= 0.8/900
+      if episode < 950:
+      #if epsilon > 0.1:
+        #epsilon -= 0.8/900
+        epsilon -= 0.001
 
       if len(last_100_ep_rewards) == 100:
         last_100_ep_rewards = last_100_ep_rewards[1:]
