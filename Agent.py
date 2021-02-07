@@ -322,6 +322,8 @@ class Agent():
         print(allcomb)
         print('------------------------msxmin-----------------------')
         print(msxmin)
+        
+        
 
     def graterthan(self, lst, d):
         result = []

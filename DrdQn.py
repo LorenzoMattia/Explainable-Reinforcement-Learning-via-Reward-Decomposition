@@ -35,8 +35,11 @@ class DQN(tf.keras.Model):
     x = self.dense1(x)
     x = self.dense2(x)
     return self.dense3(x)
+    
+def eval_rew(total_rew):
+    return total_rew[6] > 150
 
-def demo_lander(seed=None, render=False, prints=True):
+def demo_lander(seed=None, render=False, prints=True, explain = False):
     env.seed(seed)
     total_reward = np.zeros(NUM_COMPONENT)
     steps = 0
@@ -44,6 +47,11 @@ def demo_lander(seed=None, render=False, prints=True):
     while True:
         s = tf.expand_dims(s, axis=0)
         a = select_epsilon_greedy_action(s, 0.)
+        if explain and eval_rew(r):
+            for i in range(num_actions):
+                if not i == a
+                    explanation(s, a, i)
+            explain = False
         s, r, done, info = env.step(a)
         total_reward += r
 
@@ -55,6 +63,9 @@ def demo_lander(seed=None, render=False, prints=True):
             print("observations:", " ".join(["{:+0.2f}".format(x) for x in s]))
             print("step {} total_reward {}".format(steps, total_reward))
         steps += 1
+        
+            
+            
         if done: break
         if steps>max_episode_length: break
     return total_reward
@@ -148,7 +159,7 @@ def train_step(states, actions, rewards, next_states, dones):
     optimizer[c].apply_gradients(zip(grads, main_nn[c].trainable_variables))
   return totaloss/NUM_COMPONENT
 
-num_episodes = 25
+num_episodes = 1500
 batch_size = 32
 discount = 0.99
 buffer = ReplayBuffer(100000)
@@ -221,6 +232,95 @@ def train():
     print(loss_plotter)
     loss_plotter.plot("Episodes", "Loss")
     demo_lander(render= True)
+  
+    
+def explanation(state, a1, a2):
+    names = ['crash', 'live', 'main fuel cost', 'side fuel cost', 'angle', 'contact', 'distance', 'velocity']
+    state = tf.expand_dims(state, axis=0)
+    qvals = main_nn[0](state)
+    for c in range(NUM_COMPONENT):
+        if not c == 0:
+            qvals = np.vstack((qvals,main_nn[c](state)))
+    q1 = qvals[:, a1]
+    q2 = qvals[:, a2]
+
+    rdx = q1-q2     #ogni elemento del vettore risultante è l'rdx di una componente
+    values2names = dict(zip(rdx, names))
+    rdxtot = np.sum(rdx)    #rdx totale
+    print('------------------------RDX-----------------------')
+    print(rdx)
+    print('------------------------RDX totale-----------------------')
+    print(rdxtot)
+
+    x = np.arange(NUM_COMPONENT)
+    plt.bar(x, height = rdx)
+    plt.xticks(x, ['crash', 'live', 'main fuel cost', 'side fuel cost', 'angle', 'contact', 'distance', 'velocity'], rotation = 45)
+    plt.show()
+
+    d = 0
+    for i in range(len(rdx)):
+        if rdx[i]<0:
+            d += rdx[i]
+    d = abs(d)
+    print('------------------------d-----------------------')
+    print(d)
+
+    msxplus = ()
+
+    for L in range(0, len(rdx)+1):
+        allcomb = []
+        for subset in itertools.combinations(rdx, L):
+            allcomb.append(subset)
+        allcomb = np.array(allcomb)
+        greaters = graterthan(allcomb, d)
+        if greaters:
+            msxplus = min(greaters, key = sum)
+            break
+
+
+    print('------------------------msxplus-----------------------')
+    print(msxplus)
+    try:
+        v = np.sum(msxplus) - msxplus.min()
+    except:
+        v = np.sum(msxplus)
+    print('------------------------v-----------------------')
+    print(v)
+    msxmin = ()
+    for L in range(0, len(rdx)+1):
+        allcomb = []
+        for subset in itertools.combinations(-rdx, L):
+            allcomb.append(subset)
+        allcomb = np.array(allcomb)
+        greaters = graterthan(allcomb, v)
+        if greaters:
+            msxmin = min(greaters, key = sum)
+            break
+
+    print('------------------------allcomb-----------------------')
+
+    print(allcomb)
+    print('------------------------msxmin-----------------------')
+    print(msxmin)
+    
+    x = np.arange(msxplus.size())
+    plt,title('MSX+')
+    plt.bar(x, height = msxplus)
+    plt.xticks(x, [values2names[x] for x in msxplus], rotation = 45)
+    plt.show()
+    
+    x = np.arange(msxmin.size())
+    plt,title('MSX-')
+    plt.bar(x, height = msxmin)
+    plt.xticks(x, [values2names[x] for x in msxmin], rotation = 45)
+    plt.show()
+
+def graterthan(lst, d):
+    result = []
+    for i in lst:
+        if np.sum(i) > d:
+            result.append(i)
+    return result
 
 if __name__ == '__main__':
 
