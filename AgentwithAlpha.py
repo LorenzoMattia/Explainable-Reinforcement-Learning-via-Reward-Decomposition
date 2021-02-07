@@ -88,7 +88,7 @@ class Agent():
         self.update_target_weights()
 
         for ep in range(self.max_episodes):
-            
+            #self.stateaction_dict = {}
             current_state = self.reset()
             d = False
             ep_rew = np.zeros(self.NUM_COMPONENT)
@@ -105,16 +105,14 @@ class Agent():
                     self.stateaction_dict[(tuple(current_state), a[0])] = 0
                 else: 
                     self.stateaction_dict[(tuple(current_state), a[0])] += 1
-                
                 next_state = o
                 ep_rew += r
                 
                 self.buffer.add(current_state, a, r, next_state, d)
                 cur_frame += 1
-                if cur_frame % 2000 == 0:
+                if cur_frame % 200 == 0:
                     #Update target's weights
                     self.update_target_weights()
-                
                 if len(self.buffer) >= self.batch_size:
                     states, actions, rewards, next_states, dones = self.buffer.sample(self.batch_size)
                     meanLoss += self.train_step(states, actions, rewards, next_states, dones)
@@ -146,7 +144,6 @@ class Agent():
         totaloss = 0
         vals = np.zeros((self.batch_size,self.num_actions))
         alpha = self.keystovalues(states, actions)
-        
         for c in range(self.NUM_COMPONENT):
             vals += self.predict(next_states,c)
         next_actions = np.argmax(vals, axis=-1)
@@ -227,8 +224,11 @@ class Agent():
     def execute_some_policy(self, seed=None, render=False, prints=False):
         total_reward = 0
         for i in range(self.num_policy_exe):
-            total_reward += np.sum(self.demo_lander(seed,render,prints))
-        avarage_reward = total_reward/self.num_policy_exe
+            temp = self.demo_lander(seed,render,prints)
+            print('----------------------------------')
+            print(temp)
+            total_reward += np.sum(temp)
+        avarage_reward = float(total_reward)/self.num_policy_exe
         return avarage_reward
 
     def predict(self, state, component):
@@ -259,7 +259,7 @@ class Agent():
 
         
 if __name__ == '__main__':
-    agent = Agent(num_policy_exe = 1, max_episode_length = 300, max_episodes = 701, discount_decay_episodes = 500, batch_size = 64)
+    agent = Agent(num_policy_exe = 1, max_episode_length = 100, max_episodes = 701, discount_decay_episodes = 1000, batch_size = 64)
     agent.main()
         
         

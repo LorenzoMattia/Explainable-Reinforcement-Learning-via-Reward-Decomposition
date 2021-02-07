@@ -8,6 +8,9 @@ from ReplayBuffer import ReplayBuffer
 from QNetwork import QNetwork
 import os, sys
 from cliff_world import CliffWalkingEnv
+import gym
+import random
+import itertools
 
 #filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
 #filepath = 'D:\\Users\\norto\\Documents\\Università La Sapienza\\RL\\Progetto_Esame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
@@ -47,7 +50,7 @@ class Agent():
         True if you want to execute the learned policy instead of continue learning False otherwise
     """
 
-    def __init__(self, env = CliffWalkingEnv(), QNetwork = QNetwork, epsilon = 0.9, discount = 0.99, max_episodes = 500, max_episode_length = 3000,
+    def __init__(self, env = LunarLander(), QNetwork = QNetwork, epsilon = 0.9, discount = 0.99, max_episodes = 500, max_episode_length = 3000,
                 batch_size = 32, discount_decay_episodes = 400, plot_point = 25, num_policy_exe = 10, continue_learning = False, 
                 execute_policy = False, filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'):
         
@@ -63,6 +66,7 @@ class Agent():
         self.plotter = GraphCollector()
         self.num_actions = self.env.action_space.n
         self.NUM_COMPONENT = self.env.num_reward_components
+        #self.NUM_COMPONENT = 5
         self.discount_decay_episodes = discount_decay_episodes
         self.plot_point = plot_point
         self.main_nn = []
@@ -121,10 +125,10 @@ class Agent():
             
             
             if (ep) % self.plot_point == 0:
-                tent_rew = self.execute_some_policy(10)
+                tent_rew = self.execute_some_policy()
                 self.plotter.append(ep, tent_rew)
                 meanLoss = meanLoss/num_train if not num_train == 0 else 'not computed'
-                print(f'Episode :{ep}  Rew: {tent_rew}  MeanLoss: {meanLoss}')
+                print(f'Episode :{ep}  Rew: {tent_rew}  MeanLoss: {meanLoss}    BufferSize: {len(self.buffer)}')
             
             print(f'Episode :{ep}   Step :{step}   Rew: {ep_rew}')
         
@@ -138,28 +142,28 @@ class Agent():
     def train_step(self, states, actions, rewards, next_states, dones):
         totaloss = 0
         vals = np.zeros((self.batch_size,self.num_actions))
-
+        #computation of the best actions to perform starting from all the states contained in the batch-> the computation is based on the prediction made by the main nns
         for c in range(self.NUM_COMPONENT):
-            vals += self.predict(next_states,c)
+            vals += self.predict(next_states,c) #summation of all the components predictions
         next_actions = np.argmax(vals, axis=-1)
         
         for c in range(self.NUM_COMPONENT):
-            next_qs = self.target_nn[c](next_states)
-            max_next_qs = tf.math.reduce_sum(next_qs* tf.one_hot(next_actions, self.num_actions), axis=-1)
-            target = rewards[:,c] + (1. - dones) * self.discount * max_next_qs
+            next_qs = self.target_nn[c](next_states)    #Q value predicted by the target nns for the next states for a specific component
+            max_next_qs = tf.math.reduce_sum(next_qs* tf.one_hot(next_actions, self.num_actions), axis=-1)  #selection of the best Qvalue predicted for that component
+            target = rewards[:,c] + (1. - dones) * self.discount * max_next_qs  #Qvalues for the target nns, they are more precise because of the summation with the current reward
             
             with tf.GradientTape() as tape:
                 selected_action_values = tf.math.reduce_sum(        # Q(s, a)
-                  self.predict(states,c) * tf.one_hot(actions[:,0], self.num_actions), axis=-1)
+                  self.predict(states,c) * tf.one_hot(actions[:,0], self.num_actions), axis=-1)     #Qvalue prediction made by the main nns
                 
                 temp = tf.square(target - selected_action_values)
-                loss = tf.math.reduce_mean(temp)
+                loss = tf.math.reduce_sum(temp)/self.batch_size     #loss computation
                 
             totaloss +=loss
             variables = self.main_nn[c].trainable_variables
             gradients = tape.gradient(loss, variables)
             self.optimizer[c].apply_gradients(zip(gradients, variables))
-        return loss/self.NUM_COMPONENT
+        return totaloss/self.NUM_COMPONENT
         
         
     def demo_lander(self, seed=None, render=False, prints=True):
@@ -169,6 +173,10 @@ class Agent():
         s = self.reset()
         while True:
             a = self.policy(s)
+            #print(a)
+            if steps == 200:
+                r = random.randrange(0,3)
+                self.explanation(s, a[0], r)
             s, r, done, info = self.step(a[0])
             total_reward += r
 
@@ -180,6 +188,7 @@ class Agent():
                 print("observations:", " ".join(["{:+0.2f}".format(x) for x in s]))
                 print("step {} total_reward {}".format(steps, total_reward))
             steps += 1
+            
             if done: break
             if steps>self.max_episode_length: break
         return total_reward
@@ -207,11 +216,11 @@ class Agent():
         a = np.argmax(vals, axis=-1) if  temp >= eps  else np.random.randint(self.num_actions, size=vals.shape[0])
         return a
         
-    def execute_some_policy(self, num_iterations = 10, seed=None, render=False, prints=False):
+    def execute_some_policy(self, seed=None, render=False, prints=False):
         total_reward = 0
-        for i in range(num_iterations):
+        for i in range(self.num_policy_exe):
             total_reward += np.sum(self.demo_lander(seed,render,prints))
-        avarage_reward = total_reward/num_iterations
+        avarage_reward = total_reward/self.num_policy_exe
         return avarage_reward
 
     def predict(self, state, component):
@@ -224,7 +233,7 @@ class Agent():
             else:
                 print("Missing filepath")
                 return
-            self.demo_lander(env, render = True)
+            self.demo_lander(render = True)
         else:
             self.train() 
                     
@@ -239,10 +248,85 @@ class Agent():
         if np.shape(o) == ():
             o = np.array([o])
         return o
-
         
+#env = gym.make('LunarLander-v2')
+
+    def explanation(self, state, a1, a2):
+        state = tf.expand_dims(state, axis=0)
+        qvals = self.predict(state, 0)   
+        for c in range(self.NUM_COMPONENT):
+            if not c == 0:
+                qvals = np.vstack((qvals, self.predict(state, c)))
+        q1 = qvals[:, a1]
+        q2 = qvals[:, a2]
+        
+        rdx = q1-q2     #ogni elemento del vettore risultante è l'rdx di una componente
+        rdxtot = np.sum(rdx)    #rdx totale
+        print('------------------------RDX-----------------------')
+        print(rdx)
+        print('------------------------RDX totale-----------------------')
+        print(rdxtot)
+        
+        x = np.arange(self.NUM_COMPONENT)
+        plt.bar(x, height = rdx)
+        plt.xticks(x, ['crash', 'live', 'main fuel cost', 'side fuel cost', 'angle', 'contact', 'distance', 'velocity'], rotation = 45)
+        plt.show()
+        
+        d = 0
+        for i in range(len(rdx)):
+            if rdx[i]<0:
+                d += rdx[i]
+        d = abs(d)
+        print('------------------------d-----------------------')
+        print(d)        
+        
+        msxplus = ()
+        
+        for L in range(0, len(rdx)+1):
+            allcomb = []
+            for subset in itertools.combinations(rdx, L):
+                allcomb.append(subset)
+            allcomb = np.array(allcomb)
+            greaters = self.graterthan(allcomb, d)
+            if greaters:
+                msxplus = min(greaters, key = sum)
+                break
+        
+        
+        print('------------------------msxplus-----------------------')    
+        print(msxplus)
+        try:
+            v = np.sum(msxplus) - msxplus.min()
+        except:
+            v = np.sum(msxplus)
+        print('------------------------v-----------------------')
+        print(v)
+        msxmin = ()
+        for L in range(0, len(rdx)+1):
+            allcomb = []
+            for subset in itertools.combinations(-rdx, L):
+                allcomb.append(subset)
+            allcomb = np.array(allcomb)
+            greaters = self.graterthan(allcomb, v)
+            if greaters:
+                msxmin = min(greaters, key = sum)
+                break
+                
+        print('------------------------allcomb-----------------------')    
+        
+        print(allcomb)
+        print('------------------------msxmin-----------------------')    
+        print(msxmin)
+    
+    def graterthan(self, lst, d):
+        result = []
+        for i in lst:
+            if np.sum(i) > d:
+                result.append(i)
+        return result
+                
 if __name__ == '__main__':
-    agent = Agent()
+    agent = Agent(execute_policy = True)
     agent.main()
         
         
