@@ -289,13 +289,14 @@ class LunarLander(gym.Env, EzPickle):
         assert len(state) == 8
 
         reward = np.zeros(8)
+        #reward = np.zeros(5)
         '''
         shaping = \
             - 100*np.sqrt(state[0]*state[0] + state[1]*state[1]) \
             - 100*np.sqrt(state[2]*state[2] + state[3]*state[3]) \
             - 100*abs(state[4]) + 10*state[6] + 10*state[7]  # And ten points for legs contact, the idea is if you
                                                              # lose contact again after landing, you get negative reward
-        '''                                                     
+        '''
         shaping = \
             np.array([-100*abs(state[4]),\
             10*state[6] + 10*state[7], \
@@ -304,6 +305,7 @@ class LunarLander(gym.Env, EzPickle):
         
         if self.prev_shaping is not None:
             reward[4:] = shaping - self.prev_shaping
+            #reward[4] = shaping - self.prev_shaping
         self.prev_shaping = shaping
 
         reward[2] -= m_power*0.30  # less fuel spent is better, about -30 for heuristic landing
