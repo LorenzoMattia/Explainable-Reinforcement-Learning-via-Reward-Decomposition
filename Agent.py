@@ -49,8 +49,8 @@ class Agent():
         True if you want to execute the learned policy instead of continue learning False otherwise
     """
 
-    def __init__(self, env = LunarLander(), QNet = QNetwork, epsilon = 0.9, discount = 0.99, max_episodes = 1000, max_episode_length = 1000,
-                batch_size = 32, discount_decay_episodes = 400, plot_point = 25, num_policy_exe = 10, continue_learning = False,
+    def __init__(self, env = LunarLander(), QNet = DQN, epsilon = 0.9, discount = 0.99, max_episodes = 1000, max_episode_length = 1000,
+                batch_size = 32, discount_decay_episodes = 600, plot_point = 25, num_policy_exe = 10, continue_learning = False,
                 execute_policy = False, filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'):
 
         self.env = env
@@ -66,7 +66,6 @@ class Agent():
         self.loss_plotter = GraphCollector()
         self.num_actions = self.env.action_space.n
         self.NUM_COMPONENT = self.env.num_reward_components
-        #self.NUM_COMPONENT = 5
         self.discount_decay_episodes = discount_decay_episodes
         self.plot_point = plot_point
         self.main_nn = []
