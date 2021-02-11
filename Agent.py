@@ -10,6 +10,7 @@ from cliff_world import CliffWalkingEnv
 import gym
 import random
 import itertools
+from Explainer import Explainer
 
 #filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
 #filepath = 'D:\\Users\\norto\\Documents\\Università La Sapienza\\RL\\Progetto_Esame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
@@ -74,6 +75,8 @@ class Agent():
         self.mse = tf.keras.losses.MeanSquaredError()
         self.num_policy_exe = num_policy_exe
         self.filepath = filepath
+        self.explainer = Explainer(self)
+        
         for c in range(self.NUM_COMPONENT):
             self.main_nn.append(QNet(64, self.num_actions))
             self.target_nn.append(QNet(64, self.num_actions))
@@ -169,8 +172,50 @@ class Agent():
             self.optimizer[c].apply_gradients(zip(gradients, self.main_nn[c].trainable_variables))
         mean_loss = totaloss/self.NUM_COMPONENT
         return mean_loss
-
-
+    
+    
+    def policy_explanation(self, render = False):
+        steps = 0
+        total_reward = np.zeros(self.NUM_COMPONENT)
+        s = self.reset()
+        rdxlist = []
+        done = False
+        while not done:
+            a = self.policy(s)
+            s, r, done, info = self.step(a)
+            total_reward += r
+            rdxtot = np.zeros(self.NUM_COMPONENT)
+            for i in range(self.num_actions):
+                if not i == a:
+                    rdxtot += self.explainer.compute_rdx(s, a, i)   #summation of rdx between all the actions in one step
+            rdxmean = rdxtot/(self.num_actions-1)                     #mean of the rdxs of one step
+            rdxlist.append(rdxmean)
+            if render:
+                still_open = self.env.render()
+                if still_open == False: break
+            steps += 1
+            if steps>self.max_episode_length: break    
+        print (steps)
+        print(np.mean(rdxlist, axis = 0))
+        print(np.mean(rdxlist[:50], axis = 0))
+        print(np.mean(rdxlist[200:], axis = 0))                        #mean of the medium rdx of all the steps
+        
+        #un elemento di rdxlist è l'rdx dell'azione scelta rispetto alla media delle reward delle altre azioni (DIMOSTRATO EMPIRICAMENTE)
+        #component2timesinmsx contiene per ogni componente le volte che è comparsa nell'msxplus ovvero che scegliendo una certa azione consentiva di superare il disadvantage
+        #da fare anche con msxmin
+        
+        component2timesinmsx = dict(zip(self.explainer.components_names, np.zeros(self.NUM_COMPONENT)))
+        for rdx in rdxlist:
+            values2names = dict(zip(rdx, self.explainer.components_names))
+            d = self.explainer.compute_d(rdx)
+            msxplus = self.explainer.compute_msx(rdx, d)
+            print(msxplus)
+            for c in msxplus:
+                component2timesinmsx[values2names[c]] = component2timesinmsx[values2names[c]] +1
+                
+        print(component2timesinmsx)
+        
+            
     def demo_lander(self, seed=None, render=False, prints=True):
         self.env.seed(seed)
         total_reward = np.zeros(self.NUM_COMPONENT)
@@ -235,7 +280,7 @@ class Agent():
             else:
                 print("Missing filepath")
                 return
-            self.demo_lander(render = True)
+            self.policy_explanation(render = True)
         else:
             self.train()
 
@@ -252,87 +297,10 @@ class Agent():
             o = np.array([o])
             #o = tf.one_hot(o, 20)
         return o
-
-#env = gym.make('LunarLander-v2')
-
-    def explanation(self, state, a1, a2):
-        state = tf.expand_dims(state, axis=0)
-        qvals = self.predict(state, 0)
-        for c in range(self.NUM_COMPONENT):
-            if not c == 0:
-                qvals = np.vstack((qvals, self.predict(state, c)))
-        q1 = qvals[:, a1]
-        q2 = qvals[:, a2]
-
-        rdx = q1-q2     #ogni elemento del vettore risultante è l'rdx di una componente
-        rdxtot = np.sum(rdx)    #rdx totale
-        print('------------------------RDX-----------------------')
-        print(rdx)
-        print('------------------------RDX totale-----------------------')
-        print(rdxtot)
-
-        x = np.arange(self.NUM_COMPONENT)
-        plt.bar(x, height = rdx)
-        plt.xticks(x, ['crash', 'live', 'main fuel cost', 'side fuel cost', 'angle', 'contact', 'distance', 'velocity'], rotation = 45)
-        plt.show()
-
-        d = 0
-        for i in range(len(rdx)):
-            if rdx[i]<0:
-                d += rdx[i]
-        d = abs(d)
-        print('------------------------d-----------------------')
-        print(d)
-
-        msxplus = ()
-
-        for L in range(0, len(rdx)+1):
-            allcomb = []
-            for subset in itertools.combinations(rdx, L):
-                allcomb.append(subset)
-            allcomb = np.array(allcomb)
-            greaters = self.graterthan(allcomb, d)
-            if greaters:
-                msxplus = min(greaters, key = sum)
-                break
-
-
-        print('------------------------msxplus-----------------------')
-        print(msxplus)
-        try:
-            v = np.sum(msxplus) - msxplus.min()
-        except:
-            v = np.sum(msxplus)
-        print('------------------------v-----------------------')
-        print(v)
-        msxmin = ()
-        for L in range(0, len(rdx)+1):
-            allcomb = []
-            for subset in itertools.combinations(-rdx, L):
-                allcomb.append(subset)
-            allcomb = np.array(allcomb)
-            greaters = self.graterthan(allcomb, v)
-            if greaters:
-                msxmin = min(greaters, key = sum)
-                break
-
-        print('------------------------allcomb-----------------------')
-
-        print(allcomb)
-        print('------------------------msxmin-----------------------')
-        print(msxmin)
-        
-        
-
-    def graterthan(self, lst, d):
-        result = []
-        for i in lst:
-            if np.sum(i) > d:
-                result.append(i)
-        return result
+    
 
 if __name__ == '__main__':
 
-    agent = Agent()
+    agent = Agent(execute_policy = True)
 
     agent.main()

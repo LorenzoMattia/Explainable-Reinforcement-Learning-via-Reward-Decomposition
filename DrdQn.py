@@ -18,6 +18,7 @@ NUM_COMPONENT = env.num_reward_components
 rew_plotter = GraphCollector()
 loss_plotter = GraphCollector()
 execute_policy = True
+num2actions = {0 : "noop", 1: "leftengine", 2: "mainengine", 3: "rightengine"}
 filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'
 print('Number of state features: {}'.format(num_features))
 print('Number of possible actions: {}'.format(num_actions))
@@ -39,7 +40,7 @@ class DQN(tf.keras.Model):
     return self.dense3(x)
     
 def eval_rew(total_rew):
-    return total_rew[6] > 130
+    return total_rew[6] > 135
 
 def demo_lander(seed=None, render=False, prints=True, explain = False):
     env.seed(seed)
@@ -297,13 +298,13 @@ def explanation(state, a1, a2):
     print(f'msxmin = {msxmin}')
     
     x = np.arange(len(msxplus))
-    plt.title('MSX+')
+    plt.title('MSX+ ' + num2actions[a1] + 'vs' + num2actions[a2])
     plt.bar(x, height = msxplus)
     plt.xticks(x, [values2names[x] for x in msxplus], rotation = 45)
     plt.show()
     
     x = np.arange(len(msxmin))
-    plt.title('MSX-')
+    plt.title('MSX- ' + num2actions[a1] + 'vs' + num2actions[a2])
     plt.bar(x, height = msxmin)
     plt.xticks(x, [values2names[x] for x in msxmin], rotation = 45)
     plt.show()
