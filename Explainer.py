@@ -43,7 +43,7 @@ class Explainer():
         return abs(d)
         
     def compute_v(self, msxplus):
-        return np.sum(msxplus) - msxplus.min()
+        return np.sum(msxplus) - msxplus.min() if not len(msxplus) == 0 else 0
         
     def explanation(state, a1, a2, plot = False):
     
@@ -87,3 +87,35 @@ class Explainer():
             if np.sum(i) > k:
                 result.append(i)
         return result
+        
+        
+    def computeallmsx(self, rdxlist, chosenactions = None): 
+        component2timesinmsxplus = dict(zip(self.components_names, np.zeros(self.agent.NUM_COMPONENT)))
+        component2timesinmsxmin = component2timesinmsxplus.copy()
+        actions2componentsinmsxplus = {}
+        actions2componentsinmsxmin = {}
+        for i in range(self.agent.num_actions):
+            actions2componentsinmsxplus[i] = component2timesinmsxplus.copy()
+            actions2componentsinmsxmin[i] = component2timesinmsxplus.copy()
+        #actions2componentsinmsxmin = actions2componentsinmsxplus.copy()
+        for i,rdx in enumerate(rdxlist):
+            values2names = dict(zip(rdx, self.components_names))
+            d = self.compute_d(rdx)
+            msxplus = self.compute_msx(rdx, d)
+            v = self.compute_v(msxplus)
+            msxmin = self.compute_msx(rdx, v, False)
+            #print(msxplus)
+            #print(msxmin)
+            for c in msxplus:
+                component2timesinmsxplus[values2names[c]] = component2timesinmsxplus[values2names[c]] +1
+                if chosenactions is not None:
+                    actions2componentsinmsxplus[chosenactions[i]][values2names[c]] = actions2componentsinmsxplus[chosenactions[i]][values2names[c]] + 1
+            for c in msxmin:
+                component2timesinmsxmin[values2names[c]] = component2timesinmsxmin[values2names[c]] +1
+                if chosenactions is not None:
+                    actions2componentsinmsxmin[chosenactions[i]][values2names[c]] = actions2componentsinmsxmin[chosenactions[i]][values2names[c]] + 1
+        
+        return component2timesinmsxplus, component2timesinmsxmin, actions2componentsinmsxplus, actions2componentsinmsxmin
+                
+                
+    

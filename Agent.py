@@ -179,41 +179,74 @@ class Agent():
         total_reward = np.zeros(self.NUM_COMPONENT)
         s = self.reset()
         rdxlist = []
+        chosenactions = []
         done = False
         while not done:
             a = self.policy(s)
+            chosenactions.append(a)
             s, r, done, info = self.step(a)
             total_reward += r
-            rdxtot = np.zeros(self.NUM_COMPONENT)
+            rdxtot = np.zeros(((self.num_actions-1), self.NUM_COMPONENT))
             for i in range(self.num_actions):
                 if not i == a:
-                    rdxtot += self.explainer.compute_rdx(s, a, i)   #summation of rdx between all the actions in one step
-            rdxmean = rdxtot/(self.num_actions-1)                     #mean of the rdxs of one step
-            rdxlist.append(rdxmean)
+                    j = i -1 if i > a else i
+                    rdxtot[j, :] = self.explainer.compute_rdx(s, a, i)   #summation of rdx between all the actions in one step
+            #rdxmean = rdxtot/(self.num_actions-1)                     #mean of the rdxs of one step
+            rdxlist.append(rdxtot)
             if render:
                 still_open = self.env.render()
                 if still_open == False: break
             steps += 1
-            if steps>self.max_episode_length: break    
-        print (steps)
-        print(np.mean(rdxlist, axis = 0))
-        print(np.mean(rdxlist[:50], axis = 0))
-        print(np.mean(rdxlist[200:], axis = 0))                        #mean of the medium rdx of all the steps
+            if steps>self.max_episode_length: break 
         
-        #un elemento di rdxlist è l'rdx dell'azione scelta rispetto alla media delle reward delle altre azioni (DIMOSTRATO EMPIRICAMENTE)
+        rdxlistmean = np.sum(rdxlist, axis = 1)
+        
+        print (steps)
+        print(f"mean of the medium rdx of all the steps {np.mean(rdxlistmean, axis = 0)}\n")            #mean of the medium rdx of all the steps
+        print(f"{np.mean(rdxlistmean[:50], axis = 0)}\n")
+        print(f"{np.mean(rdxlistmean[200:], axis = 0)}\n")                       
+        print(f"median of the medium rdx of all the steps {np.median(rdxlistmean, axis=0)}\n")           #median of the medium rdx of all the steps
+        
+        #un elemento di rdxlistmean è l'rdx dell'azione scelta rispetto alla media delle reward delle altre azioni (DIMOSTRATO EMPIRICAMENTE)
         #component2timesinmsx contiene per ogni componente le volte che è comparsa nell'msxplus ovvero che scegliendo una certa azione consentiva di superare il disadvantage
         #da fare anche con msxmin
         
-        component2timesinmsx = dict(zip(self.explainer.components_names, np.zeros(self.NUM_COMPONENT)))
-        for rdx in rdxlist:
-            values2names = dict(zip(rdx, self.explainer.components_names))
-            d = self.explainer.compute_d(rdx)
-            msxplus = self.explainer.compute_msx(rdx, d)
-            print(msxplus)
-            for c in msxplus:
-                component2timesinmsx[values2names[c]] = component2timesinmsx[values2names[c]] +1
-                
-        print(component2timesinmsx)
+        component2timesinmsxplus, component2timesinmsxmin, actions2componentsinmsxplus, actions2componentsinmsxmin = self.explainer.computeallmsx(rdxlistmean, chosenactions)
+        
+        action2action2msxplus = {}
+        action2action2msxmin = {}
+        actions2rdx = {}
+        for i in range(self.num_actions):
+            actions2rdx[i] = []
+        for i, a in enumerate(chosenactions):
+            actions2rdx[a].append(rdxlist[i])
+        for i in range(self.num_actions):
+            actionvs2msxplus = {}
+            actionvs2msxmin = {}
+            temp = np.array(actions2rdx[i])
+            for j in range(self.num_actions-1):
+                actionvs = temp[:,j,:]
+                plus, min, _, _ = self.explainer.computeallmsx(actionvs)
+                k = j if j<i else j+1
+                actionvs2msxplus[self.explainer.num2actions[k]] = plus
+                actionvs2msxmin[self.explainer.num2actions[k]] = min
+            
+            action2action2msxplus[i] = actionvs2msxplus
+            action2action2msxmin[i] = actionvs2msxmin
+            
+        print(f"Volte per componente in msx+ {component2timesinmsxplus}\n")
+        print(f"Volte per componente in msx- {component2timesinmsxmin}\n")
+        
+        for i in range(self.num_actions):
+            print(f"azione {self.explainer.num2actions[i]} eseguita {chosenactions.count(i)} volte")
+            print(f"msx+ : {actions2componentsinmsxplus[i]}")
+            print(f"msx- : {actions2componentsinmsxmin[i]}\n")
+            for j in action2action2msxplus[i].keys():
+                print(f"{self.explainer.num2actions[i]} vs {j}: ")
+                print(f"msx+ : {action2action2msxplus[i][j]}")
+                print(f"msx- : {action2action2msxmin[i][j]}")
+            print("\n\n")    
+        
         
             
     def demo_lander(self, seed=None, render=False, prints=True):
