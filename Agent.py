@@ -175,6 +175,7 @@ class Agent():
     
     
     def policy_explanation(self, render = False):
+        self.env.seed(26174)
         steps = 0
         total_reward = np.zeros(self.NUM_COMPONENT)
         s = self.reset()
@@ -185,6 +186,7 @@ class Agent():
             a = self.policy(s)
             chosenactions.append(a)
             s, r, done, info = self.step(a)
+            print(s)
             total_reward += r
             rdxtot = np.zeros(((self.num_actions-1), self.NUM_COMPONENT))
             for i in range(self.num_actions):
@@ -213,27 +215,8 @@ class Agent():
         
         component2timesinmsxplus, component2timesinmsxmin, actions2componentsinmsxplus, actions2componentsinmsxmin = self.explainer.computeallmsx(rdxlistmean, chosenactions)
         
-        action2action2msxplus = {}
-        action2action2msxmin = {}
-        actions2rdx = {}
-        for i in range(self.num_actions):
-            actions2rdx[i] = []
-        for i, a in enumerate(chosenactions):
-            actions2rdx[a].append(rdxlist[i])
-        for i in range(self.num_actions):
-            actionvs2msxplus = {}
-            actionvs2msxmin = {}
-            temp = np.array(actions2rdx[i])
-            for j in range(self.num_actions-1):
-                actionvs = temp[:,j,:]
-                plus, min, _, _ = self.explainer.computeallmsx(actionvs)
-                k = j if j<i else j+1
-                actionvs2msxplus[self.explainer.num2actions[k]] = plus
-                actionvs2msxmin[self.explainer.num2actions[k]] = min
-            
-            action2action2msxplus[i] = actionvs2msxplus
-            action2action2msxmin[i] = actionvs2msxmin
-            
+        action2action2msxplus, action2action2msxmin = self.explainer.msx_actionVSsaction(rdxlist, chosenactions)
+        
         print(f"Volte per componente in msx+ {component2timesinmsxplus}\n")
         print(f"Volte per componente in msx- {component2timesinmsxmin}\n")
         
@@ -313,7 +296,13 @@ class Agent():
             else:
                 print("Missing filepath")
                 return
-            self.policy_explanation(render = True)
+            #seed = int(np.random.random_integers(0,100000))
+            #print(seed)
+            #self.env.seed(seed)
+            #self.demo_lander(seed=seed, render=True, prints=False)
+            #self.policy_explanation(render = True)
+            self.explainer.state_explanation()
+            return
         else:
             self.train()
 
