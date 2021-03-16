@@ -23,7 +23,33 @@ class Explainer():
                 break
                 
         return np.array(msx)
-        
+    
+
+    def compute_mnx(self, rdx, d):
+        mnx = []
+        rdx = rdx[rdx > 0]
+        for L in range(0, len(rdx)+1):
+            allcomb = []
+            for subset in itertools.combinations(rdx, L):
+                allcomb.append(subset)
+            allcomb = np.array(allcomb)
+            lowers = self.remaining_more_d(rdx, allcomb, d)
+            if lowers:
+                mnx = min(lowers, key = sum)
+                break
+        return mnx
+    
+    def remaining_more_d(self, rdx, allcomb, d):
+        result = []
+        for lst in allcomb:
+            temp = rdx
+            for element in lst:
+                if element in temp:
+                    temp.remove(element)
+            if np.sum(temp)<d:
+                result.append(lst)
+        return result
+    
     def compute_rdx(self, state, a1, a2):
         state = tf.expand_dims(state, axis=0)
         qvals = self.agent.predict(state, 0)[0]
@@ -53,13 +79,14 @@ class Explainer():
         msxplus = self.compute_msx(rdx, d)
         v = self.compute_v(msxplus)
         msxmin = self.compute_msx(rdx, v, False)
-        
+        mnx = compute_mnx(rdx, d)
         if plot:
             print(f'Action to do: {self.num2actions[a1]}, Action to compare: {self.num2actions[a2]}')
             print(f'RDX: {rdx}')
             print(f'msxplus = {msxplus}')
             print(f'v = {v}')
             print(f'msxmin = {msxmin}')
+            print(f'mnx = {mnx}')
             #plot rdx
             x = np.arange(self.agent.NUM_COMPONENT)
             plt.bar(x, height = rdx)
