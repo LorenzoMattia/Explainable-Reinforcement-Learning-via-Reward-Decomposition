@@ -92,8 +92,8 @@ class ReplayBuffer(object):
     next_states = np.array(next_states)
     dones = np.array(dones, dtype=np.float32)
     return states, actions, rewards, next_states, dones
-    
-    
+
+
 def select_epsilon_greedy_action(state, epsilon):
   """Take random action with probability epsilon, else take best action."""
   result = tf.random.uniform((1,))
@@ -101,6 +101,7 @@ def select_epsilon_greedy_action(state, epsilon):
     return env.action_space.sample() # Random action (left or right).
   else:
     return tf.argmax(main_nn(state)[0]).numpy() # Greedy action for state.
+
 
 @tf.function
 def train_step(states, actions, rewards, next_states, dones):
