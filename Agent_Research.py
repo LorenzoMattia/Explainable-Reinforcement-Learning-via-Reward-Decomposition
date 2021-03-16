@@ -10,6 +10,7 @@ from cliff_world import CliffWalkingEnv
 import gym
 import random
 from bisect import bisect
+from heapq import nsmallest
 import itertools
 from Explainer import Explainer
 
@@ -104,7 +105,7 @@ class Agent():
                 if step > self.max_episode_length: break
                 step += 1
                 #a = self.policy(current_state, self.epsilon)
-                a = self.new_policy(current_state, self.epsilon)
+                a = self.policy(current_state, self.epsilon)
                 o, r, d, _ = self.step(a)
                 next_state = o
                 ep_rew += np.sum(r)
@@ -272,37 +273,36 @@ class Agent():
 
     def policy(self, state, eps=0):
         result = tf.random.uniform((1,))
-        if result < eps:
-            return self.env.action_space.sample()
-        else:
-            vals = np.zeros(self.num_actions)
-            state_in = tf.expand_dims(state, axis=0)
-            for c in range(self.NUM_COMPONENT):
-                vals += self.predict(state_in,c)[0]
-            return tf.argmax(vals).numpy()
-
-    def new_policy(self, state, eps=0):
+        
         vals = np.zeros(self.num_actions)
         state_in = tf.expand_dims(state, axis=0)
         for c in range(self.NUM_COMPONENT):
             vals += self.predict(state_in,c)[0]
-        #vals = vals[0]
-        print("------------------VALS---------------------")
-        print(np.shape(vals))
-        print(vals)
-        Qvalues_total = vals
-        print("------------------Qvalues total---------------------")
-        print(np.shape(Qvalues_total))
-        print(Qvalues_total)
-        print("------------------Qvalues normalized---------------------")
-        Qvalues_normalized = Qvalues_total/np.sum(Qvalues_total, axis=0)
-        print(np.shape(Qvalues_normalized))
-        print(Qvalues_normalized)
+        if result < eps:
+            return self.weighted_random_action(vals)
+        return tf.argmax(vals).numpy()
+
+    def weighted_random_action(self, vals):
+        ''''''
+        minim = np.min(vals)
+        if minim<=0: Qvalues = np.array(vals - minim) #Normalizzo i risultati portandoli tutti positivi
+        else: Qvalues = vals
+        '''Assegno un valore minimo anche al più piccolo (il valore piu piccolo tra il 10% del totale e la metà del secondo piu piccolo)'''
+        tot = np.sum(Qvalues)
+        second_last = nsmallest(2, Qvalues)[-1]
+        #print(f"second_last: {second_last}")
+        last = second_last if second_last<tot*0.1 else tot*0.1
+        #print(f"last: {last}")
+        if minim<last:
+            for i in list(np.where(Qvalues==0))[0]:
+                Qvalues[i] = last
+        Qvalues_normalized = Qvalues/np.sum(Qvalues)
+        #print(Qvalues_normalized)
         cdf = [Qvalues_normalized[0]]
         for i in range(1, len(Qvalues_normalized)):
             cdf.append(cdf[-1] + Qvalues_normalized[i])
         random_ind = bisect(cdf,random.random())
-        print(f"selected action: {random_ind}")
+        #print(f"selected action: {random_ind}")
         return random_ind
 
        
