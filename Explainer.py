@@ -167,6 +167,38 @@ class Explainer():
             action2action2msxmin[i] = actionvs2msxmin
         return action2action2msxplus, action2action2msxmin
         
+    
+
+    def computeallmnx(self, rdxlist): 
+        component2timesinmnx = dict(zip(self.components_names, np.zeros(self.agent.NUM_COMPONENT)))
+        for i,rdx in enumerate(rdxlist):
+            values2names = dict(zip(rdx, self.components_names))
+            d = self.compute_d(rdx)
+            mnx = self.compute_mnx(rdx, d)
+            for c in mnx:
+                component2timesinmnx[values2names[c]] = component2timesinmnx[values2names[c]] +1
+        
+        return component2timesinmnx
+        
+    def mnx_actionVSsaction(self, rdxlist, chosenactions):
+        action2action2mnx = {}
+        actions2rdx = {}
+        for i in range(self.agent.num_actions):
+            actions2rdx[i] = []
+        for i, a in enumerate(chosenactions):
+            actions2rdx[a].append(rdxlist[i])           #action2rdx associa ad ognuna delle 4 azioni tutti gli rdx rispetto alle altre azioni di tutti gli step
+        for i in actions2rdx.keys():
+            if not actions2rdx[i]: continue 
+            actionvs2mnx = {}
+            temp = np.array(actions2rdx[i])
+            for j in range(self.agent.num_actions-1):
+                actionvs = temp[:,j,:]
+                mnx = self.computeallmnx(actionvs)
+                k = j if j<i else j+1
+                actionvs2mnx[self.num2actions[k]] = mnx
+            action2action2mnx[i] = actionvs2mnx
+        return action2action2mnx
+        
     def compute_state_explanation(self, state):
         a = self.agent.policy(state)
         rdxtot = np.zeros(((self.agent.num_actions -1),self.agent.NUM_COMPONENT))

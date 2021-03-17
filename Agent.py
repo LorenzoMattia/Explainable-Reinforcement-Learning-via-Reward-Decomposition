@@ -194,7 +194,7 @@ class Agent():
                     j = i -1 if i > a else i
                     rdxtot[j, :] = self.explainer.compute_rdx(s, a, i)   #summation of rdx between all the actions in one step
             #rdxmean = rdxtot/(self.num_actions-1)                     #mean of the rdxs of one step
-            rdxlist.append(rdxtot)
+            rdxlist.append(rdxtot)                                     #rdxlist contiene per ogni step l'rdx dell'azione scelta rispetto tutte le altre in indice crescente
             if render:
                 still_open = self.env.render()
                 if still_open == False: break
@@ -216,6 +216,7 @@ class Agent():
         component2timesinmsxplus, component2timesinmsxmin, actions2componentsinmsxplus, actions2componentsinmsxmin = self.explainer.computeallmsx(rdxlistmean, chosenactions)
         
         action2action2msxplus, action2action2msxmin = self.explainer.msx_actionVSsaction(rdxlist, chosenactions)
+        action2action2mnx = self.explainer.mnx_actionVSsaction(rdxlist, chosenactions)
         
         print(f"Volte per componente in msx+ {component2timesinmsxplus}\n")
         print(f"Volte per componente in msx- {component2timesinmsxmin}\n")
@@ -228,6 +229,7 @@ class Agent():
                 print(f"{self.explainer.num2actions[i]} vs {j}: ")
                 print(f"msx+ : {action2action2msxplus[i][j]}")
                 print(f"msx- : {action2action2msxmin[i][j]}")
+                print(f"mnx  : {action2action2mnx[i][j]}")
             print("\n\n")    
         
         
@@ -300,8 +302,8 @@ class Agent():
             #print(seed)
             #self.env.seed(seed)
             #self.demo_lander(seed=seed, render=True, prints=False)
-            #self.policy_explanation(render = True)
-            self.explainer.state_explanation()
+            self.policy_explanation(render = True)
+            #self.explainer.state_explanation()
             return
         else:
             self.train()
