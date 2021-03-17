@@ -27,6 +27,7 @@ class Explainer():
 
     def compute_mnx(self, rdx, d):
         mnx = []
+        print(rdx)
         rdx = rdx[rdx > 0]
         for L in range(0, len(rdx)+1):
             allcomb = []
@@ -41,12 +42,18 @@ class Explainer():
     
     def remaining_more_d(self, rdx, allcomb, d):
         result = []
+        i=0
         for lst in allcomb:
-            temp = rdx
+            print(f"indice = {i}")
+            i += 1
+            temp = list(rdx)
+            print(lst) 
             for element in lst:
+                print(temp)
                 if element in temp:
+                    print("removed")
                     temp.remove(element)
-            if np.sum(temp)<d:
+            if temp and np.sum(temp)<d:
                 result.append(lst)
         return result
     
@@ -79,7 +86,7 @@ class Explainer():
         msxplus = self.compute_msx(rdx, d)
         v = self.compute_v(msxplus)
         msxmin = self.compute_msx(rdx, v, False)
-        mnx = compute_mnx(rdx, d)
+        mnx = self.compute_mnx(rdx, d)
         if plot:
             print(f'Action to do: {self.num2actions[a1]}, Action to compare: {self.num2actions[a2]}')
             print(f'RDX: {rdx}')

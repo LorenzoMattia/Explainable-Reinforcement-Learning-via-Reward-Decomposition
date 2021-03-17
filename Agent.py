@@ -231,7 +231,30 @@ class Agent():
                 print(f"msx- : {action2action2msxmin[i][j]}")
                 print(f"mnx  : {action2action2mnx[i][j]}")
             print("\n\n")    
-        
+    
+    def policy_single_step_explanation(self, seed=None, render=False, prints=True):
+        self.env.seed(seed)
+        total_reward = np.zeros(self.NUM_COMPONENT)
+        steps = 0
+        active = True
+        s = self.reset()
+        while True:
+            a = self.policy(s)
+            if active and steps == 60:
+                active = False
+                self.explainer.explanation(s,a,0,prints)
+            s, r, done, info = self.step(a)
+            total_reward += r
+
+            if render:
+                still_open = self.env.render()
+                if still_open == False: break
+
+            steps += 1
+
+            if done: break
+            if steps>self.max_episode_length: break
+        return total_reward
         
             
     def demo_lander(self, seed=None, render=False, prints=True):
@@ -288,6 +311,7 @@ class Agent():
         avarage_reward = total_reward/self.num_policy_exe
         return avarage_reward
 
+    #@tf.function
     def predict(self, state, component):
         return self.main_nn[component](state)
 
@@ -304,6 +328,7 @@ class Agent():
             #self.demo_lander(seed=seed, render=True, prints=False)
             self.policy_explanation(render = True)
             #self.explainer.state_explanation()
+           
             return
         else:
             self.train()
@@ -325,6 +350,6 @@ class Agent():
 
 if __name__ == '__main__':
 
-    agent = Agent(execute_policy = True)
+    agent = Agent(execute_policy = False)
 
     agent.main()
