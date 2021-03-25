@@ -50,7 +50,7 @@ class Agent():
         True if you want to execute the learned policy instead of continue learning False otherwise
     """
 
-    def __init__(self, env = LunarLander(), QNet = DQN, epsilon = 0.9, discount = 0.99, max_episodes = 1000, max_episode_length = 1000,
+    def __init__(self, env = CliffWalkingEnv(), QNet = DQN, epsilon = 0.9, discount = 0.99, max_episodes = 1000, max_episode_length = 1000,
                 batch_size = 32, discount_decay_episodes = 600, plot_point = 25, num_policy_exe = 10, continue_learning = False,
                 execute_policy = False, filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'):
 
@@ -175,7 +175,7 @@ class Agent():
     
     
     def policy_explanation(self, render = False):
-        self.env.seed(26174)
+        #self.env.seed(26174)
         steps = 0
         total_reward = np.zeros(self.NUM_COMPONENT)
         s = self.reset()
@@ -184,15 +184,16 @@ class Agent():
         done = False
         while not done:
             a = self.policy(s)
+            state = s
             chosenactions.append(a)
             s, r, done, info = self.step(a)
-            print(s)
+            #print(s)
             total_reward += r
             rdxtot = np.zeros(((self.num_actions-1), self.NUM_COMPONENT))
             for i in range(self.num_actions):
                 if not i == a:
                     j = i -1 if i > a else i
-                    rdxtot[j, :] = self.explainer.compute_rdx(s, a, i)   #summation of rdx between all the actions in one step
+                    rdxtot[j, :] = self.explainer.compute_rdx(state, a, i)   #summation of rdx between all the actions in one step
             #rdxmean = rdxtot/(self.num_actions-1)                     #mean of the rdxs of one step
             rdxlist.append(rdxtot)                                     #rdxlist contiene per ogni step l'rdx dell'azione scelta rispetto tutte le altre in indice crescente
             if render:
@@ -240,9 +241,9 @@ class Agent():
         s = self.reset()
         while True:
             a = self.policy(s)
-            if active and steps == 60:
+            if active and steps == 100:
                 active = False
-                self.explainer.explanation(s,a,0,prints)
+                self.explainer.explanation(s,a,3,prints)
             s, r, done, info = self.step(a)
             total_reward += r
 
@@ -302,6 +303,7 @@ class Agent():
             state_in = tf.expand_dims(state, axis=0)
             for c in range(self.NUM_COMPONENT):
                 vals += self.predict(state_in,c)[0]
+            print(vals)
             return tf.argmax(vals).numpy()
 
     def execute_some_policy(self, seed=None, render=False, prints=False):
@@ -327,6 +329,7 @@ class Agent():
             #self.env.seed(seed)
             #self.demo_lander(seed=seed, render=True, prints=False)
             self.policy_explanation(render = True)
+            #self.policy_single_step_explanation(render = False)
             #self.explainer.state_explanation()
            
             return

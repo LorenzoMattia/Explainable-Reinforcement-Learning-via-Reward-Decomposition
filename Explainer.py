@@ -27,7 +27,7 @@ class Explainer():
 
     def compute_mnx(self, rdx, d):
         mnx = []
-        print(rdx)
+        #print(rdx)
         rdx = rdx[rdx > 0]
         for L in range(0, len(rdx)+1):
             allcomb = []
@@ -43,18 +43,22 @@ class Explainer():
     def remaining_more_d(self, rdx, allcomb, d):
         result = []
         i=0
+        
+        if d == 0:
+            return []
         for lst in allcomb:
-            print(f"indice = {i}")
+            #print(f"indice = {i}")
             i += 1
             temp = list(rdx)
-            print(lst) 
+            #print(lst) 
             for element in lst:
-                print(temp)
+                #print(temp)
                 if element in temp:
-                    print("removed")
+                    #print("removed")
                     temp.remove(element)
-            if temp and np.sum(temp)<d:
+            if not temp or np.sum(temp)<d:
                 result.append(lst)
+            
         return result
     
     def compute_rdx(self, state, a1, a2):
@@ -182,6 +186,8 @@ class Explainer():
             values2names = dict(zip(rdx, self.components_names))
             d = self.compute_d(rdx)
             mnx = self.compute_mnx(rdx, d)
+            if len(mnx) == 0:
+                print(f"mnx problem: {rdx}")
             for c in mnx:
                 component2timesinmnx[values2names[c]] = component2timesinmnx[values2names[c]] +1
         

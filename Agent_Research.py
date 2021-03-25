@@ -13,6 +13,7 @@ from bisect import bisect
 from heapq import nsmallest
 import itertools
 from Explainer import Explainer
+import math
 
 #filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
 #filepath = 'D:\\Users\\norto\\Documents\\Università La Sapienza\\RL\\Progetto_Esame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
@@ -124,7 +125,7 @@ class Agent():
 
             if self.epsilon > 0.1:
                 self.epsilon -= 0.8/self.discount_decay_episodes
-
+                
             if len(last_100_ep_rewards) == 100:
                 last_100_ep_rewards = last_100_ep_rewards[1:]
             last_100_ep_rewards.append(ep_rew)
@@ -278,8 +279,9 @@ class Agent():
         state_in = tf.expand_dims(state, axis=0)
         for c in range(self.NUM_COMPONENT):
             vals += self.predict(state_in,c)[0]
+        #print(vals)
         if result < eps:
-            return self.weighted_random_action(vals)
+            return self.Boltzmann_action(vals)
         return tf.argmax(vals).numpy()
 
     def weighted_random_action(self, vals):
@@ -296,6 +298,8 @@ class Agent():
         if minim<last:
             for i in list(np.where(Qvalues==0))[0]:
                 Qvalues[i] = last
+        if np.sum(Qvalues) == 0:
+            return self.env.action_space.sample()
         Qvalues_normalized = Qvalues/np.sum(Qvalues)
         #print(Qvalues_normalized)
         cdf = [Qvalues_normalized[0]]
@@ -305,7 +309,24 @@ class Agent():
         #print(f"selected action: {random_ind}")
         return random_ind
 
-       
+    def Boltzmann_action(self, vals):
+        
+        exp_vals = np.zeros(len(vals))
+        for i, val in enumerate(vals):
+            exp_vals[i] = math.exp(val)
+        #print(exp_vals)
+        tot_exp_vals = np.sum(exp_vals)
+        #print(tot_exp_vals)
+        exp_vals = exp_vals/tot_exp_vals
+        #print(exp_vals)
+        #print(np.sum(exp_vals))
+        cdf = [exp_vals[0]]
+        for i in range(1, len(exp_vals)):
+            cdf.append(cdf[-1] + exp_vals[i])
+        random_ind = bisect(cdf,random.random())
+        #print(f"selected action: {random_ind}")
+        return random_ind
+            
     
     def execute_some_policy(self, seed=None, render=False, prints=False):
         total_reward = 0
@@ -337,20 +358,20 @@ class Agent():
     def step(self, action):
         o, r, d, info = self.env.step(action)
         if np.shape(o) == ():
-            o = np.array([o])
-            #o = tf.one_hot(o, 20)
+            #o = np.array([o])
+            o = tf.one_hot(o, 20)
         return o, r, d, info
 
     def reset(self):
         o = self.env.reset()
         if np.shape(o) == ():
-            o = np.array([o])
-            #o = tf.one_hot(o, 20)
+            #o = np.array([o])
+            o = tf.one_hot(o, 20)
         return o
     
 
 if __name__ == '__main__':
 
-    agent = Agent(execute_policy = False)
+    agent = Agent(execute_policy = False, env = CliffWalkingEnv())
 
     agent.main()
