@@ -4,13 +4,16 @@ import lunar_lander
 from lunar_lander import LunarLander
 from GraphCollector import GraphCollector
 from ReplayBuffer import ReplayBuffer
-from QNetwork import QNetwork, DQN
+from QNetwork import QNetwork
 import os, sys
 from cliff_world import CliffWalkingEnv
 import gym
 import random
+from bisect import bisect
+from heapq import nsmallest
 import itertools
 from Explainer import Explainer
+import math
 
 #filepath = 'C:\\Users\\Lorenzo\\Documents\\Didattica Uni\\ArtificialIntelligenceRobotics\\Primo anno\\ReinforcementLearning\\ProgettoEsame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
 #filepath = 'D:\\Users\\norto\\Documents\\Università La Sapienza\\RL\\Progetto_Esame\\Explainable-Reinforcement-Learning-via-Reward-Decomposition\\Weights\\'
@@ -30,6 +33,8 @@ class Agent():
         the model predicting the Q values through the use of the call function
     epsilon : float
         hyper parameter expressing the agent initial probability of taking a random action instead of the one learned and stored in the policy
+    exploration_type : int
+        0 eps-Boltzmann exploration, 1 eps-greedy exploration, 2 Boltzmann exploration
     discount : float
         hyper parameter reducing Q value of future state-action couples
     max_episodes : int
@@ -46,16 +51,18 @@ class Agent():
         number of times the policy is executed (every plot_point episodes) for averaging results and plot graphs
     continue_learning : Bool
         True if you want to continue the learning process starting from weights already learned False otherwise
-    execute_policy : Bool
-        True if you want to execute the learned policy instead of continue learning False otherwise
+    execute_policy : int
+        0 if you want to train, 1 if you want to execute the learned policy, 2 if you want to execute the policy and get the explanation.
     """
 
-    def __init__(self, env = CliffWalkingEnv(), QNet = DQN, epsilon = 0.9, discount = 0.99, max_episodes = 1000, max_episode_length = 1000,
-                batch_size = 32, discount_decay_episodes = 600, plot_point = 25, num_policy_exe = 10, continue_learning = False,
-                execute_policy = False, filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'):
+    def __init__(self, env = LunarLander(), QNet = QNetwork, exploration_type = 0, epsilon = 0.9, discount = 0.99, max_episodes = 1000, max_episode_length = 1000,
+                batch_size = 32, discount_decay_episodes = 300, plot_point = 25, num_policy_exe = 10, continue_learning = False,
+                execute_policy = 0, filepath = os.path.abspath(os.path.dirname(sys.argv[0])) + '\\Weights\\'):
 
         self.env = env
-        self.epsilon = epsilon
+        self.exploration_type = exploration_type
+        self.epsilon = epsilon if not exploration_type==2 else 2
+        self.phi = 100 if exploration_type==2 else 1
         self.discount = discount
         self.max_episodes = max_episodes
         self.max_episode_length = max_episode_length
@@ -80,7 +87,7 @@ class Agent():
         for c in range(self.NUM_COMPONENT):
             self.main_nn.append(QNet(64, self.num_actions))
             self.target_nn.append(QNet(64, self.num_actions))
-            self.optimizer.append(tf.optimizers.Adam(1e-4))
+            self.optimizer.append(tf.optimizers.Adam(0.01)) #5e-4
 
     def train(self):
         cur_frame = 0
@@ -90,7 +97,6 @@ class Agent():
             else:
                 print("Missing filepath")
                 return
-        #self.update_target_weights()
         last_100_ep_rewards = []
         for ep in range(self.max_episodes+1):
 
@@ -119,9 +125,15 @@ class Agent():
                     loss = self.train_step(states, actions, rewards, next_states, dones)
                     totalLoss.append(loss)
 
-            if self.epsilon > 0.1:
-                self.epsilon -= 0.8/self.discount_decay_episodes
-
+            #Exploration Decay
+            if self.exploration_type == 2:               #Boltzmann
+                if self.epsilon > -0.299:
+                    self.epsilon -= 1.8/self.discount_decay_episodes  
+                    self.phi = math.pow(10,self.epsilon)            
+            else:                                       #Other cases
+                if self.epsilon > 0.1:
+                    self.epsilon -= 0.8/self.discount_decay_episodes
+                
             if len(last_100_ep_rewards) == 100:
                 last_100_ep_rewards = last_100_ep_rewards[1:]
             last_100_ep_rewards.append(ep_rew)
@@ -163,9 +175,6 @@ class Agent():
             with tf.GradientTape() as tape:
                 selected_action_values = tf.reduce_sum(        # Q(s, a)
                   self.predict(states,c) * tf.one_hot(actions, self.num_actions), axis=-1)  #Qvalue prediction made by the main nns
-
-                #temp = tf.square(target - selected_action_values)
-                #loss = tf.math.reduce_sum(temp)/self.batch_size
                 loss = self.mse(target, selected_action_values)
             totaloss += loss
             gradients = tape.gradient(loss, self.main_nn[c].trainable_variables)
@@ -174,8 +183,8 @@ class Agent():
         return mean_loss
     
     
-    def policy_explanation(self, render = False):
-        #self.env.seed(26174)
+    def policy_explanation(self, render = False, seed = None):
+        self.env.seed(seed)
         steps = 0
         total_reward = np.zeros(self.NUM_COMPONENT)
         s = self.reset()
@@ -184,78 +193,23 @@ class Agent():
         done = False
         while not done:
             a = self.policy(s)
-            state = s
             chosenactions.append(a)
             s, r, done, info = self.step(a)
-            #print(s)
             total_reward += r
             rdxtot = np.zeros(((self.num_actions-1), self.NUM_COMPONENT))
             for i in range(self.num_actions):
                 if not i == a:
                     j = i -1 if i > a else i
-                    rdxtot[j, :] = self.explainer.compute_rdx(state, a, i)   #summation of rdx between all the actions in one step
-            #rdxmean = rdxtot/(self.num_actions-1)                     #mean of the rdxs of one step
-            rdxlist.append(rdxtot)                                     #rdxlist contiene per ogni step l'rdx dell'azione scelta rispetto tutte le altre in indice crescente
+                    rdxtot[j, :] = self.explainer.compute_rdx(s, a, i)   #summation of rdx between all the actions in one step
+            rdxlist.append(rdxtot)
             if render:
                 still_open = self.env.render()
                 if still_open == False: break
             steps += 1
             if steps>self.max_episode_length: break 
         
-        rdxlistmean = np.sum(rdxlist, axis = 1)
+        self.explainer.compute_explanation(rdxlist,chosenactions)
         
-        print (steps)
-        print(f"mean of the medium rdx of all the steps {np.mean(rdxlistmean, axis = 0)}\n")            #mean of the medium rdx of all the steps
-        print(f"{np.mean(rdxlistmean[:50], axis = 0)}\n")
-        print(f"{np.mean(rdxlistmean[200:], axis = 0)}\n")                       
-        print(f"median of the medium rdx of all the steps {np.median(rdxlistmean, axis=0)}\n")           #median of the medium rdx of all the steps
-        
-        #un elemento di rdxlistmean è l'rdx dell'azione scelta rispetto alla media delle reward delle altre azioni (DIMOSTRATO EMPIRICAMENTE)
-        #component2timesinmsx contiene per ogni componente le volte che è comparsa nell'msxplus ovvero che scegliendo una certa azione consentiva di superare il disadvantage
-        #da fare anche con msxmin
-        
-        component2timesinmsxplus, component2timesinmsxmin, actions2componentsinmsxplus, actions2componentsinmsxmin = self.explainer.computeallmsx(rdxlistmean, chosenactions)
-        
-        action2action2msxplus, action2action2msxmin = self.explainer.msx_actionVSsaction(rdxlist, chosenactions)
-        action2action2mnx = self.explainer.mnx_actionVSsaction(rdxlist, chosenactions)
-        
-        print(f"Volte per componente in msx+ {component2timesinmsxplus}\n")
-        print(f"Volte per componente in msx- {component2timesinmsxmin}\n")
-        
-        for i in range(self.num_actions):
-            print(f"azione {self.explainer.num2actions[i]} eseguita {chosenactions.count(i)} volte")
-            print(f"msx+ : {actions2componentsinmsxplus[i]}")
-            print(f"msx- : {actions2componentsinmsxmin[i]}\n")
-            for j in action2action2msxplus[i].keys():
-                print(f"{self.explainer.num2actions[i]} vs {j}: ")
-                print(f"msx+ : {action2action2msxplus[i][j]}")
-                print(f"msx- : {action2action2msxmin[i][j]}")
-                print(f"mnx  : {action2action2mnx[i][j]}")
-            print("\n\n")    
-    
-    def policy_single_step_explanation(self, seed=None, render=False, prints=True):
-        self.env.seed(seed)
-        total_reward = np.zeros(self.NUM_COMPONENT)
-        steps = 0
-        active = True
-        s = self.reset()
-        while True:
-            a = self.policy(s)
-            if active and steps == 100:
-                active = False
-                self.explainer.explanation(s,a,3,prints)
-            s, r, done, info = self.step(a)
-            total_reward += r
-
-            if render:
-                still_open = self.env.render()
-                if still_open == False: break
-
-            steps += 1
-
-            if done: break
-            if steps>self.max_episode_length: break
-        return total_reward
         
             
     def demo_lander(self, seed=None, render=False, prints=True):
@@ -295,17 +249,33 @@ class Agent():
             self.target_nn[c].set_weights(self.main_nn[c].get_weights())
 
     def policy(self, state, eps=0):
-        result = tf.random.uniform((1,))
-        if result < eps:
-            return self.env.action_space.sample()
-        else:
-            vals = np.zeros(self.num_actions)
-            state_in = tf.expand_dims(state, axis=0)
-            for c in range(self.NUM_COMPONENT):
-                vals += self.predict(state_in,c)[0]
-            print(vals)
-            return tf.argmax(vals).numpy()
+        #Compute Q-value
+        vals = np.zeros(self.num_actions)
+        state_in = tf.expand_dims(state, axis=0)
+        for c in range(self.NUM_COMPONENT):
+            vals += self.predict(state_in,c)[0]
 
+        if self.exploration_type == 2:
+            return self.Boltzmann_action(vals)          #Boltzmann
+        
+        rand = tf.random.uniform((1,))
+        if rand<eps:
+            if self.exploration_type == 1:
+                return self.env.action_space.sample()   #eps-greedy
+            return self.Boltzmann_action(vals)          #eps-Boltzmann
+        
+        return tf.argmax(vals).numpy()                  #Exploitation
+    
+    def Boltzmann_action(self, vals):
+        exp_vals = [math.exp(x/self.phi) for x in vals]
+        tot_exp_vals = np.sum(exp_vals)
+        exp_vals = exp_vals/tot_exp_vals
+        cdf = [exp_vals[0]]
+        for i in range(1, len(exp_vals)):
+            cdf.append(cdf[-1] + exp_vals[i])
+        random_ind = bisect(cdf,random.random())
+        return random_ind
+     
     def execute_some_policy(self, seed=None, render=False, prints=False):
         total_reward = 0
         for i in range(self.num_policy_exe):
@@ -313,46 +283,42 @@ class Agent():
         avarage_reward = total_reward/self.num_policy_exe
         return avarage_reward
 
-    #@tf.function
     def predict(self, state, component):
         return self.main_nn[component](state)
 
     def main(self):
-        if self.execute_policy :
-            if not self.filepath is None:
-                self.load_weights()
-            else:
-                print("Missing filepath")
-                return
-            #seed = int(np.random.random_integers(0,100000))
-            #print(seed)
-            #self.env.seed(seed)
-            #self.demo_lander(seed=seed, render=True, prints=False)
-            self.policy_explanation(render = True)
-            #self.policy_single_step_explanation(render = False)
-            #self.explainer.state_explanation()
-           
-            return
-        else:
+        if self.execute_policy == 0:
             self.train()
+            return
+        if not self.filepath is None:
+            self.load_weights()
+        else:
+            print("Missing filepath")
+            return
+        if self.execute_policy == 1:
+            self.demo_lander(render=True, prints=False)
+            return
+        if self.execute_policy == 2:
+            self.policy_explanation(render = True)
+            return
+        print("execute_policy invalid value")
+        return
 
     def step(self, action):
         o, r, d, info = self.env.step(action)
         if np.shape(o) == ():
-            o = np.array([o])
-            #o = tf.one_hot(o, 20)
+            o = tf.one_hot(o, 20)
         return o, r, d, info
 
     def reset(self):
         o = self.env.reset()
         if np.shape(o) == ():
-            o = np.array([o])
-            #o = tf.one_hot(o, 20)
+            o = tf.one_hot(o, 20)
         return o
     
 
 if __name__ == '__main__':
 
-    agent = Agent(execute_policy = False)
+    agent = Agent(execute_policy = 2)
 
     agent.main()
